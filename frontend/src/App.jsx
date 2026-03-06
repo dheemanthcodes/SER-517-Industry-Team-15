@@ -13,7 +13,7 @@ function App() {
     const [showLanding, setShowLanding] = useState(true)
 
     useEffect(() => {
-        // Check for existing session on mount
+        
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session)
             if (session?.user) {
@@ -23,7 +23,7 @@ function App() {
             }
         })
 
-        // Listen for auth changes
+        
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session)
             if (session?.user) {
@@ -49,7 +49,7 @@ function App() {
         try {
             await supabase.auth.signOut()
         } catch (err) {
-            // Continue with local logout even if remote fails
+            
         }
         setUser(null)
         setSession(null)
@@ -61,7 +61,7 @@ function App() {
         setShowLanding(false)
     }
 
-    // Show main landing page
+   
     if (showLanding) {
         return (
             <div className="landing-page">
@@ -79,14 +79,14 @@ function App() {
         )
     }
 
-    // Show login page if not logged in
+    
     if (!isLoggedIn || !user) {
         return <LoginPage onLogin={handleLogin} />
     }
 
     return (
         <div className="app-layout">
-            {/* Sidebar */}
+           
             <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : 'expanded'}`}>
                 <div className="sidebar-header">
                     {!sidebarCollapsed && <span className="sidebar-logo">App</span>}
@@ -110,12 +110,12 @@ function App() {
                         onClick={() => setActivePage('devices')}
                     >
                         <span className="sidebar-item-icon">📱</span>
-                        <span className="sidebar-item-text">Device Management</span>
+                        <span className="sidebar-item-text">Device Management Page</span>
                     </div>
                 </div>
             </div>
 
-            {/* Main Content */}
+            
             <div className="main-content">
                 {activePage === 'home' ? (
                     <LandingPage user={user} onLogout={handleLogout} />
