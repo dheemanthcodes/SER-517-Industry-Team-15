@@ -18,179 +18,28 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     })
 
     const handleAddDevice = async (e) => {
-        if (e) e.preventDefault()
+    e.preventDefault();   // 🔥 prevent page refresh
 
-        try {
-            setLoading(true)
-            setError(null)
-
-            // Step 1: Create vehicle
-            const { data: vehicleData, error: vehicleError } = await supabase
-                .from('vehicles')
-                .insert([
-                    {
-                        unit_number: deviceForm.ambulanceNumber,
-                        station_name: 'Main Station'
-                    }
-                ])
-                .select()
-
-            if (vehicleError) throw vehicleError
-            const vehicleId = vehicleData[0].id
-
-            // Step 2: Create Drug Box 1 (type='BOX')
-            const { data: box1Data, error: box1Error } = await supabase
-                .from('assets')
-                .insert([
-                    {
-                        vehicle_id: vehicleId,
-                        type: 'BOX',
-                        label: deviceForm.drugBox1Label,
-                        is_active: true
-                    }
-                ])
-                .select()
-
-            if (box1Error) throw box1Error
-            const box1Id = box1Data[0].id
-
-            // Step 3: Create BLE tag for Drug Box 1
-            const { error: ble1Error } = await supabase
-                .from('ble_tags')
-                .insert([
-                    {
-                        asset_id: box1Id,
-                        identifier: deviceForm.drugBox1BleId,
-                        tag_model: 'Minew E8'
-                    }
-                ])
-
-            if (ble1Error) throw ble1Error
-
-            // Step 4: Create Drug Box 2 (type='BOX')
-            const { data: box2Data, error: box2Error } = await supabase
-                .from('assets')
-                .insert([
-                    {
-                        vehicle_id: vehicleId,
-                        type: 'BOX',
-                        label: deviceForm.drugBox2Label,
-                        is_active: true
-                    }
-                ])
-                .select()
-
-            if (box2Error) throw box2Error
-            const box2Id = box2Data[0].id
-
-            // Step 5: Create BLE tag for Drug Box 2
-            const { error: ble2Error } = await supabase
-                .from('ble_tags')
-                .insert([
-                    {
-                        asset_id: box2Id,
-                        identifier: deviceForm.drugBox2BleId,
-                        tag_model: 'Minew E8'
-                    }
-                ])
-
-            if (ble2Error) throw ble2Error
-
-            // Step 6: Create Narcotics Pouch 1 (type='POUCH', parent=box1)
-            const { data: pouch1Data, error: pouch1Error } = await supabase
-                .from('assets')
-                .insert([
-                    {
-                        vehicle_id: vehicleId,
-                        type: 'POUCH',
-                        label: deviceForm.narcoticsPouch1Label,
-                        parent_asset_id: box1Id,
-                        is_active: true
-                    }
-                ])
-                .select()
-
-            if (pouch1Error) throw pouch1Error
-            const pouch1Id = pouch1Data[0].id
-
-            // Step 7: Create BLE tag for Narcotics Pouch 1
-            const { error: ble3Error } = await supabase
-                .from('ble_tags')
-                .insert([
-                    {
-                        asset_id: pouch1Id,
-                        identifier: deviceForm.narcoticsPouch1BleId,
-                        tag_model: 'Minew E8'
-                    }
-                ])
-
-            if (ble3Error) throw ble3Error
-
-            // Step 8: Create Narcotics Pouch 2 (type='POUCH', parent=box2)
-            const { data: pouch2Data, error: pouch2Error } = await supabase
-                .from('assets')
-                .insert([
-                    {
-                        vehicle_id: vehicleId,
-                        type: 'POUCH',
-                        label: deviceForm.narcoticsPouch2Label,
-                        parent_asset_id: box2Id,
-                        is_active: true
-                    }
-                ])
-                .select()
-
-            if (pouch2Error) throw pouch2Error
-            const pouch2Id = pouch2Data[0].id
-
-            // Step 9: Create BLE tag for Narcotics Pouch 2
-            const { error: ble4Error } = await supabase
-                .from('ble_tags')
-                .insert([
-                    {
-                        asset_id: pouch2Id,
-                        identifier: deviceForm.narcoticsPouch2BleId,
-                        tag_model: 'Minew E8'
-                    }
-                ])
-
-            if (ble4Error) throw ble4Error
-
-            // Step 10: Create Raspberry Pi device entry
-            const { error: deviceError } = await supabase
-                .from('devices')
-                .insert([
-                    {
-                        vehicle_id: vehicleId,
-                        device_name: `Raspberry Pi - ${deviceForm.ambulanceNumber}`,
-                        is_active: true
-                    }
-                ])
-
-            if (deviceError) throw deviceError
-
-            // Success! Reset form and notify parent
-            setDeviceForm({
-                ambulanceNumber: '',
-                drugBox1Label: '',
-                drugBox1BleId: '',
-                drugBox2Label: '',
-                drugBox2BleId: '',
-                narcoticsPouch1Label: '',
-                narcoticsPouch1BleId: '',
-                narcoticsPouch2Label: '',
-                narcoticsPouch2BleId: ''
-            })
-
-            if (onSuccess) await onSuccess()
-            onClose()
-        } catch (err) {
-            console.error('Error adding device:', err)
-            setError(`Failed to add device: ${err.message}`)
-        } finally {
-            setLoading(false)
-        }
+    if (onSuccess) {
+        onSuccess(deviceForm);   // append to sample vehicles
     }
+
+    // ✅ Reset form fields
+    setDeviceForm({
+        ambulanceNumber: '',
+        drugBox1Label: '',
+        drugBox1BleId: '',
+        drugBox2Label: '',
+        drugBox2BleId: '',
+        narcoticsPouch1Label: '',
+        narcoticsPouch1BleId: '',
+        narcoticsPouch2Label: '',
+        narcoticsPouch2BleId: ''
+    });
+
+    // ✅ Close modal
+    onClose();
+};
 
     if (!show) return null
 

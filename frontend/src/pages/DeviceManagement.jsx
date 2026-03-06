@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
+import AddDeviceModal from '../components/AddDeviceModal'
+
 
 function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
@@ -10,7 +12,7 @@ function DeviceManagement() {
         {
             id: 'sample-1',
             unit_number: 'AMB-001',
-            station_name: 'Main Station',
+            station_name: 'Scottsdale Station 3',
             created_at: new Date().toISOString(),
             assets: [
                 {
@@ -83,7 +85,8 @@ function DeviceManagement() {
             }
 
             const realVehicles = (data || []).filter(v => !v.id?.startsWith('sample-'))
-            setVehicles([...sampleVehicles, ...realVehicles])
+            //setVehicles([...sampleVehicles, ...realVehicles])
+            setVehicles(sampleVehicles)
         } catch (err) {
             console.error('Error fetching vehicles:', err)
             setError('Failed to load vehicles. Please try again.')
@@ -112,7 +115,51 @@ function DeviceManagement() {
     const cancelEdit = () => {
         setEditingField(null)
     }
+    const deleteData = () =>{
+        setVehicles([])
+    }
+    const handleAddSampleVehicle = (formData) => {
+    const newVehicleId = `sample-${Date.now()}`
 
+    const newVehicle = {
+        id: newVehicleId,
+        unit_number: formData.ambulanceNumber,
+        station_name: 'Main Station',
+        created_at: new Date().toISOString(),
+        assets: [
+            {
+                id: `box-1-${newVehicleId}`,
+                type: 'BOX',
+                label: formData.drugBox1Label,
+                ble_tag: { identifier: formData.drugBox1BleId }
+            },
+            {
+                id: `box-2-${newVehicleId}`,
+                type: 'BOX',
+                label: formData.drugBox2Label,
+                ble_tag: { identifier: formData.drugBox2BleId }
+            },
+            {
+                id: `pouch-1-${newVehicleId}`,
+                type: 'POUCH',
+                label: formData.narcoticsPouch1Label,
+                parent_asset_id: `box-1-${newVehicleId}`,
+                ble_tag: { identifier: formData.narcoticsPouch1BleId }
+            },
+            {
+                id: `pouch-2-${newVehicleId}`,
+                type: 'POUCH',
+                label: formData.narcoticsPouch2Label,
+                parent_asset_id: `box-2-${newVehicleId}`,
+                ble_tag: { identifier: formData.narcoticsPouch2BleId }
+            }
+        ]
+    }
+
+    setVehicles(prev => [...prev, newVehicle])
+    console.log(vehicles)
+    setExpandedVehicle(newVehicleId)
+}
     return (
         <div className="page-container">
             <div className="page-header">
@@ -178,9 +225,11 @@ function DeviceManagement() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                         <button
                                             onClick={(e) => {
+                                                
                                                 e.stopPropagation()
                                                 if (window.confirm(`Delete ${vehicle.unit_number}?`)) {
                                                     console.log('Delete vehicle:', vehicle.id)
+                                                    deleteData()
                                                 }
                                             }}
                                             style={{
@@ -377,6 +426,14 @@ function DeviceManagement() {
                     })
                 )}
             </div>
+            
+            {/* Add Device Modal */}
+            <AddDeviceModal
+    show={showAddDeviceModal}
+    onClose={() => setShowAddDeviceModal(false)}
+    onSuccess={handleAddSampleVehicle}
+/>
+
         </div>
     )
 }
