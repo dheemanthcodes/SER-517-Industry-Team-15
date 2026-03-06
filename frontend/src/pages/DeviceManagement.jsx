@@ -175,9 +175,30 @@ function DeviceManagement() {
                                             }}>SAMPLE</span>
                                         )}
                                     </span>
-                                    <span className="device-entry-toggle">
-                                        {expandedVehicle === vehicle.id ? '▼' : '▶'}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                if (window.confirm(`Delete ${vehicle.unit_number}?`)) {
+                                                    console.log('Delete vehicle:', vehicle.id)
+                                                }
+                                            }}
+                                            style={{
+                                                background: '#ff6b6b',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                padding: '4px 12px',
+                                                cursor: 'pointer',
+                                                fontSize: '12px'
+                                            }}
+                                        >
+                                            🗑️ Delete
+                                        </button>
+                                        <span className="device-entry-toggle">
+                                            {expandedVehicle === vehicle.id ? '▼' : '▶'}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 {expandedVehicle === vehicle.id && (
