@@ -1,15 +1,19 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
 
-function LoginPage({ onLogin }) {
+function LoginPage({ onLogin, initialSignUp = false }) {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
-    const [isSignUp, setIsSignUp] = useState(false)
+    const [isSignUp, setIsSignUp] = useState(initialSignUp)
     const [message, setMessage] = useState('')
+
+    useEffect(() => {
+        setIsSignUp(initialSignUp)
+    }, [initialSignUp])
 
     const handleLogin = async (e) => {
         e.preventDefault()
