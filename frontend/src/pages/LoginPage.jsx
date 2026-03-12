@@ -2,18 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
 
-function LoginPage({ onLogin, initialSignUp = false }) {
+function LoginPage({ onLogin, onGoToSignUp }) {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
-    const [isSignUp, setIsSignUp] = useState(initialSignUp)
-    const [message, setMessage] = useState('')
-
-    useEffect(() => {
-        setIsSignUp(initialSignUp)
-    }, [initialSignUp])
 
     const handleLogin = async (e) => {
         e.preventDefault()
@@ -36,34 +30,6 @@ function LoginPage({ onLogin, initialSignUp = false }) {
             }
         } catch (err) {
             setError('An error occurred during login')
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleSignUp = async (e) => {
-        e.preventDefault()
-        setError('')
-        setMessage('')
-        setLoading(true)
-
-        try {
-            const { data, error: signUpError } = await supabase.auth.signUp({
-                email,
-                password
-            })
-
-            if (signUpError) {
-                setError(signUpError.message)
-                return
-            }
-
-            if (data.user) {
-                setMessage('Account created! Please check your email to verify your account.')
-                setIsSignUp(false)
-            }
-        } catch (err) {
-            setError('An error occurred during sign up')
         } finally {
             setLoading(false)
         }
@@ -100,10 +66,10 @@ function LoginPage({ onLogin, initialSignUp = false }) {
                         />
                     </div>
                     <Typography.Title level={3}>
-                        {isSignUp ? 'Create Account' : 'Welcome Back'}
+                        Welcome Back
                     </Typography.Title>
                     <Typography.Text type="secondary">
-                        {isSignUp ? 'Sign up to get started' : 'Please sign in to your account'}
+                        Please sign in to your account
                     </Typography.Text>
                 </div>
 
@@ -113,13 +79,7 @@ function LoginPage({ onLogin, initialSignUp = false }) {
                     </div>
                 )}
 
-                {message && (
-                    <div className="success-message" style={{ color: 'green', marginBottom: '16px', padding: '12px', backgroundColor: '#d4edda', borderRadius: '4px' }}>
-                        {message}
-                    </div>
-                )}
-
-                <form onSubmit={isSignUp ? handleSignUp : handleLogin}>
+                <form onSubmit={handleLogin}>
                     <div className="form-group">
                         <Typography.Text>Email</Typography.Text>
                         <Input
@@ -143,7 +103,7 @@ function LoginPage({ onLogin, initialSignUp = false }) {
                     </div>
 
                     <Button block htmlType="submit" loading={loading}>
-                        {isSignUp ? 'Sign Up' : 'Sign In'}
+                        Sign In
                     </Button>
                 </form>
 
@@ -194,11 +154,17 @@ function LoginPage({ onLogin, initialSignUp = false }) {
                 <Divider />
 
                 <Typography.Text type="secondary" style={{ display: 'block', textAlign: 'center' }}>
-                    {isSignUp ? (
-                        <>Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); setIsSignUp(false); setError(''); setMessage(''); }}>Sign In</a></>
-                    ) : (
-                        <>Don't have an account? <a href="#" onClick={(e) => { e.preventDefault(); setIsSignUp(true); setError(''); setMessage(''); }}>Sign Up</a></>
-                    )}
+                    Don't have an account?{' '}
+                    <a
+                        href="#"
+                        onClick={(e) => {
+                            e.preventDefault()
+                            setError('')
+                            onGoToSignUp?.()
+                        }}
+                    >
+                        Sign Up
+                    </a>
                 </Typography.Text>
             </Card>
         </div>

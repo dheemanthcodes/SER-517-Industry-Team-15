@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import LoginPage from './pages/LoginPage'
+import SignupPage from './pages/SignupPage'
 import LandingPage from './pages/LandingPage'
 import PublicLandingPage from './pages/PublicLandingPage'
 import DeviceManagement from './pages/DeviceManagement'
@@ -12,10 +13,35 @@ function App() {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [activePage, setActivePage] = useState('home')
     const [showLanding, setShowLanding] = useState(true)
-    const [loginInitialSignUp, setLoginInitialSignUp] = useState(false)
+    const [authView, setAuthView] = useState('login')
     const hadUserRef = useRef(false)
 
+    const syncViewFromLocation = () => {
+        if (user) return
+        const path = window.location.pathname || '/'
+        if (path === '/login') {
+            setAuthView('login')
+            setShowLanding(false)
+            return
+        }
+        if (path === '/signup') {
+            setAuthView('signup')
+            setShowLanding(false)
+            return
+        }
+        setShowLanding(true)
+    }
+
+    const navigateAuth = (view) => {
+        const path = view === 'signup' ? '/signup' : '/login'
+        window.history.pushState({ view }, '', path)
+        setAuthView(view)
+        setShowLanding(false)
+    }
+
     useEffect(() => {
+        syncViewFromLocation()
+
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session)
             if (session?.user) {
@@ -59,24 +85,21 @@ function App() {
         setUser(null)
         setSession(null)
         setIsLoggedIn(false)
+        window.history.pushState({ view: 'landing' }, '', '/')
         setShowLanding(true)
     }
 
     const handleLoginClick = () => {
-        window.history.pushState({ view: 'login' }, '', window.location.pathname)
-        setLoginInitialSignUp(false)
-        setShowLanding(false)
+        navigateAuth('login')
     }
 
     const handleSignUpClick = () => {
-        window.history.pushState({ view: 'login' }, '', window.location.pathname)
-        setLoginInitialSignUp(true)
-        setShowLanding(false)
+        navigateAuth('signup')
     }
 
     useEffect(() => {
         const handlePopState = () => {
-            if (!user) setShowLanding(true)
+            syncViewFromLocation()
         }
         window.addEventListener('popstate', handlePopState)
         return () => window.removeEventListener('popstate', handlePopState)
@@ -92,11 +115,10 @@ function App() {
     }
 
     if (!isLoggedIn || !user) {
-        return (
-            <LoginPage
-                onLogin={handleLogin}
-                initialSignUp={loginInitialSignUp}
-            />
+        return authView === 'signup' ? (
+            <SignupPage onGoToLogin={handleLoginClick} />
+        ) : (
+            <LoginPage onLogin={handleLogin} onGoToSignUp={handleSignUpClick} />
         )
     }
 
