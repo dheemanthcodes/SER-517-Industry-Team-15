@@ -7,7 +7,6 @@ import AddDeviceModal from '../components/AddDeviceModal'
 function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
 
-    // Sample/Mock data for demonstration
     const sampleVehicles = [
         {
             id: 'sample-1',
@@ -85,7 +84,6 @@ function DeviceManagement() {
             }
 
             const realVehicles = (data || []).filter(v => !v.id?.startsWith('sample-'))
-            //setVehicles([...sampleVehicles, ...realVehicles])
             setVehicles(sampleVehicles)
         } catch (err) {
             console.error('Error fetching vehicles:', err)
@@ -107,7 +105,6 @@ function DeviceManagement() {
         const newValue = editingValues[fieldId]
         if (newValue) {
             console.log(`Saving ${fieldType} for asset ${assetId}: ${newValue}`)
-            // Here you would typically update the database
         }
         setEditingField(null)
     }
@@ -426,13 +423,11 @@ function DeviceManagement() {
                     })
                 )}
             </div>
-            
-            {/* Add Device Modal */}
             <AddDeviceModal
-    show={showAddDeviceModal}
-    onClose={() => setShowAddDeviceModal(false)}
-    onSuccess={handleAddSampleVehicle}
-/>
+                show={showAddDeviceModal}
+                onClose={() => setShowAddDeviceModal(false)}
+                onSuccess={handleAddSampleVehicle}
+            />
 
         </div>
     )

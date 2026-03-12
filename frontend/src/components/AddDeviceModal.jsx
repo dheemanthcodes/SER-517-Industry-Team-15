@@ -18,28 +18,26 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     })
 
     const handleAddDevice = async (e) => {
-    e.preventDefault();   // 🔥 prevent page refresh
+        e.preventDefault()
 
-    if (onSuccess) {
-        onSuccess(deviceForm);   // append to sample vehicles
+        if (onSuccess) {
+            onSuccess(deviceForm)
+        }
+
+        setDeviceForm({
+            ambulanceNumber: '',
+            drugBox1Label: '',
+            drugBox1BleId: '',
+            drugBox2Label: '',
+            drugBox2BleId: '',
+            narcoticsPouch1Label: '',
+            narcoticsPouch1BleId: '',
+            narcoticsPouch2Label: '',
+            narcoticsPouch2BleId: ''
+        })
+
+        onClose()
     }
-
-    // ✅ Reset form fields
-    setDeviceForm({
-        ambulanceNumber: '',
-        drugBox1Label: '',
-        drugBox1BleId: '',
-        drugBox2Label: '',
-        drugBox2BleId: '',
-        narcoticsPouch1Label: '',
-        narcoticsPouch1BleId: '',
-        narcoticsPouch2Label: '',
-        narcoticsPouch2BleId: ''
-    });
-
-    // ✅ Close modal
-    onClose();
-};
 
     if (!show) return null
 
@@ -65,7 +63,6 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                 )}
 
                 <form className="device-form" onSubmit={handleAddDevice}>
-                    {/* Ambulance Section */}
                     <div className="form-section">
                         <Typography.Title level={4}>🚑 Ambulance</Typography.Title>
                         <div className="form-field">
@@ -81,7 +78,6 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                         </div>
                     </div>
 
-                    {/* Drug Box 1 Section */}
                     <div className="form-section">
                         <Typography.Title level={4}>💊 Drug Box 1</Typography.Title>
                         <div className="form-row">
@@ -110,7 +106,6 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                         </div>
                     </div>
 
-                    {/* Drug Box 2 Section */}
                     <div className="form-section">
                         <Typography.Title level={4}>💊 Drug Box 2</Typography.Title>
                         <div className="form-row">
@@ -139,7 +134,6 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                         </div>
                     </div>
 
-                    {/* Narcotics Pouch 1 Section */}
                     <div className="form-section">
                         <Typography.Title level={4}>🔒 Narcotics Pouch 1</Typography.Title>
                         <div className="form-row">
@@ -168,7 +162,6 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                         </div>
                     </div>
 
-                    {/* Narcotics Pouch 2 Section */}
                     <div className="form-section">
                         <Typography.Title level={4}>🔒 Narcotics Pouch 2</Typography.Title>
                         <div className="form-row">
