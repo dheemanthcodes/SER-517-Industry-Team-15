@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import LoginPage from './pages/LoginPage'
 import LandingPage from './pages/LandingPage'
+import PublicLandingPage from './pages/PublicLandingPage'
 import DeviceManagement from './pages/DeviceManagement'
 
 function App() {
@@ -11,26 +12,30 @@ function App() {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [activePage, setActivePage] = useState('home')
     const [showLanding, setShowLanding] = useState(true)
+    const [loginInitialSignUp, setLoginInitialSignUp] = useState(false)
+    const hadUserRef = useRef(false)
 
     useEffect(() => {
-        
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session)
             if (session?.user) {
+                hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
                 setShowLanding(false)
             }
         })
 
-        
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session)
             if (session?.user) {
+                hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
                 setShowLanding(false)
             } else {
+                if (hadUserRef.current) setShowLanding(true)
+                hadUserRef.current = false
                 setUser(null)
                 setIsLoggedIn(false)
             }
@@ -57,31 +62,42 @@ function App() {
         setShowLanding(true)
     }
 
-    const handleGetStarted = () => {
+    const handleLoginClick = () => {
+        window.history.pushState({ view: 'login' }, '', window.location.pathname)
+        setLoginInitialSignUp(false)
         setShowLanding(false)
     }
 
-   
+    const handleSignUpClick = () => {
+        window.history.pushState({ view: 'login' }, '', window.location.pathname)
+        setLoginInitialSignUp(true)
+        setShowLanding(false)
+    }
+
+    useEffect(() => {
+        const handlePopState = () => {
+            if (!user) setShowLanding(true)
+        }
+        window.addEventListener('popstate', handlePopState)
+        return () => window.removeEventListener('popstate', handlePopState)
+    }, [user])
+
     if (showLanding) {
         return (
-            <div className="landing-page">
-                <div className="landing-content">
-                    <div className="landing-logo">🚑</div>
-                    <h1 className="landing-title">Ambulance Asset Tracker</h1>
-                    <p className="landing-subtitle">
-                        Track and manage drug boxes and narcotics pouches in ambulances using BLE technology
-                    </p>
-                    <button className="landing-btn" onClick={handleGetStarted}>
-                        Click here to login
-                    </button>
-                </div>
-            </div>
+            <PublicLandingPage
+                onLoginClick={handleLoginClick}
+                onSignUpClick={handleSignUpClick}
+            />
         )
     }
 
-    
     if (!isLoggedIn || !user) {
-        return <LoginPage onLogin={handleLogin} />
+        return (
+            <LoginPage
+                onLogin={handleLogin}
+                initialSignUp={loginInitialSignUp}
+            />
+        )
     }
 
     return (
