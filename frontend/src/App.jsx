@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import LoginPage from './pages/LoginPage'
+import SignupPage from './pages/SignupPage'
 import LandingPage from './pages/LandingPage'
+import PublicLandingPage from './pages/PublicLandingPage'
 import DeviceManagement from './pages/DeviceManagement'
 
 function App() {
@@ -11,26 +13,78 @@ function App() {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [activePage, setActivePage] = useState('home')
     const [showLanding, setShowLanding] = useState(true)
+    const [authView, setAuthView] = useState('login')
+    const hadUserRef = useRef(false)
+    const [bootstrapping, setBootstrapping] = useState(true)
+
+    const syncViewFromLocation = (currentUser) => {
+        const path = window.location.pathname || '/'
+        if (currentUser) {
+            const base = '/dashboard'
+            if (path.startsWith(base)) {
+                const suffix = path.slice(base.length) || '/'
+                if (suffix.startsWith('/devices')) {
+                    setActivePage('devices')
+                } else {
+                    setActivePage('home')
+                }
+                setShowLanding(false)
+                return
+            }
+            window.history.replaceState({}, '', `${base}/home`)
+            setActivePage('home')
+            setShowLanding(false)
+            return
+        }
+        if (path === '/login') {
+            setAuthView('login')
+            setShowLanding(false)
+            return
+        }
+        if (path === '/signup') {
+            setAuthView('signup')
+            setShowLanding(false)
+            return
+        }
+        setShowLanding(true)
+    }
+
+    const navigateAuth = (view) => {
+        const path = view === 'signup' ? '/signup' : '/login'
+        window.history.pushState({ view }, '', path)
+        setAuthView(view)
+        setShowLanding(false)
+    }
 
     useEffect(() => {
-        
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session)
             if (session?.user) {
+                hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
-                setShowLanding(false)
+                syncViewFromLocation(session.user)
             }
+            if (window.location.hash) {
+                window.history.replaceState(
+                    {},
+                    '',
+                    window.location.pathname + window.location.search
+                )
+            }
+            setBootstrapping(false)
         })
 
-        
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session)
             if (session?.user) {
+                hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
-                setShowLanding(false)
+                syncViewFromLocation(session.user)
             } else {
+                if (hadUserRef.current) setShowLanding(true)
+                hadUserRef.current = false
                 setUser(null)
                 setIsLoggedIn(false)
             }
@@ -54,34 +108,59 @@ function App() {
         setUser(null)
         setSession(null)
         setIsLoggedIn(false)
+        window.history.pushState({ view: 'landing' }, '', '/')
         setShowLanding(true)
     }
 
-    const handleGetStarted = () => {
-        setShowLanding(false)
+    const handleLoginClick = () => {
+        navigateAuth('login')
     }
 
-   
+    const handleSignUpClick = () => {
+        navigateAuth('signup')
+    }
+
+    useEffect(() => {
+        const handlePopState = () => {
+            syncViewFromLocation(user)
+        }
+        window.addEventListener('popstate', handlePopState)
+        return () => window.removeEventListener('popstate', handlePopState)
+    }, [user])
+
+    useEffect(() => {
+        if (!user && bootstrapping) {
+            syncViewFromLocation(null)
+        }
+    }, [bootstrapping, user])
+
+    const navigateDashboard = (page) => {
+        if (!user) return
+        const base = '/dashboard'
+        const path = page === 'devices' ? `${base}/devices` : `${base}/home`
+        window.history.pushState({ page }, '', path)
+        setActivePage(page)
+    }
+
+    if (bootstrapping) {
+        return null
+    }
+
     if (showLanding) {
         return (
-            <div className="landing-page">
-                <div className="landing-content">
-                    <div className="landing-logo">🚑</div>
-                    <h1 className="landing-title">Ambulance Asset Tracker</h1>
-                    <p className="landing-subtitle">
-                        Track and manage drug boxes and narcotics pouches in ambulances using BLE technology
-                    </p>
-                    <button className="landing-btn" onClick={handleGetStarted}>
-                        Click here to login
-                    </button>
-                </div>
-            </div>
+            <PublicLandingPage
+                onLoginClick={handleLoginClick}
+                onSignUpClick={handleSignUpClick}
+            />
         )
     }
 
-    
     if (!isLoggedIn || !user) {
-        return <LoginPage onLogin={handleLogin} />
+        return authView === 'signup' ? (
+            <SignupPage onGoToLogin={handleLoginClick} />
+        ) : (
+            <LoginPage onLogin={handleLogin} onGoToSignUp={handleSignUpClick} />
+        )
     }
 
     return (
@@ -100,14 +179,14 @@ function App() {
                 <div className="sidebar-menu">
                     <div
                         className={`sidebar-item ${activePage === 'home' ? 'active' : ''}`}
-                        onClick={() => setActivePage('home')}
+                        onClick={() => navigateDashboard('home')}
                     >
                         <span className="sidebar-item-icon">🏠</span>
                         <span className="sidebar-item-text">Homepage</span>
                     </div>
                     <div
                         className={`sidebar-item ${activePage === 'devices' ? 'active' : ''}`}
-                        onClick={() => setActivePage('devices')}
+                        onClick={() => navigateDashboard('devices')}
                     >
                         <span className="sidebar-item-icon">📱</span>
                         <span className="sidebar-item-text">Device Management Page</span>

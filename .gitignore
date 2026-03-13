@@ -45,3 +45,5 @@ htmlcov/
 coverage.xml
 config.yaml
 *.local.yaml
+.npmrc
+package-lock.json
