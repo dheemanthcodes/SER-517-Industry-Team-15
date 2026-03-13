@@ -43,7 +43,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
 
     return (
         <div className="modal-overlay" onClick={() => !loading && onClose()}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content add-device-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                     <Typography.Title level={3}>Add Ambulance Device</Typography.Title>
                     <button
@@ -57,14 +57,14 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                 <Divider />
 
                 {error && (
-                    <div style={{ color: '#c00', padding: '0 24px', marginBottom: '16px' }}>
+                    <div className="modal-error">
                         {error}
                     </div>
                 )}
 
                 <form className="device-form" onSubmit={handleAddDevice}>
                     <div className="form-section">
-                        <Typography.Title level={4}>🚑 Ambulance</Typography.Title>
+                        <Typography.Title level={4}>Ambulance</Typography.Title>
                         <div className="form-field">
                             <Typography.Text>Unit Number</Typography.Text>
                             <Input
@@ -79,7 +79,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                     </div>
 
                     <div className="form-section">
-                        <Typography.Title level={4}>💊 Drug Box 1</Typography.Title>
+                        <Typography.Title level={4}>Drug Box 1</Typography.Title>
                         <div className="form-row">
                             <div className="form-field">
                                 <Typography.Text>Box Label</Typography.Text>
@@ -107,7 +107,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                     </div>
 
                     <div className="form-section">
-                        <Typography.Title level={4}>💊 Drug Box 2</Typography.Title>
+                        <Typography.Title level={4}>Drug Box 2</Typography.Title>
                         <div className="form-row">
                             <div className="form-field">
                                 <Typography.Text>Box Label</Typography.Text>
@@ -135,7 +135,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                     </div>
 
                     <div className="form-section">
-                        <Typography.Title level={4}>🔒 Narcotics Pouch 1</Typography.Title>
+                        <Typography.Title level={4}>Narcotics Pouch 1</Typography.Title>
                         <div className="form-row">
                             <div className="form-field">
                                 <Typography.Text>Pouch Label</Typography.Text>
@@ -163,7 +163,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                     </div>
 
                     <div className="form-section">
-                        <Typography.Title level={4}>🔒 Narcotics Pouch 2</Typography.Title>
+                        <Typography.Title level={4}>Narcotics Pouch 2</Typography.Title>
                         <div className="form-row">
                             <div className="form-field">
                                 <Typography.Text>Pouch Label</Typography.Text>

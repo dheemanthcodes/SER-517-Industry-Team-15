@@ -15,10 +15,27 @@ function App() {
     const [showLanding, setShowLanding] = useState(true)
     const [authView, setAuthView] = useState('login')
     const hadUserRef = useRef(false)
+    const [bootstrapping, setBootstrapping] = useState(true)
 
-    const syncViewFromLocation = () => {
-        if (user) return
+    const syncViewFromLocation = (currentUser) => {
         const path = window.location.pathname || '/'
+        if (currentUser) {
+            const base = '/dashboard'
+            if (path.startsWith(base)) {
+                const suffix = path.slice(base.length) || '/'
+                if (suffix.startsWith('/devices')) {
+                    setActivePage('devices')
+                } else {
+                    setActivePage('home')
+                }
+                setShowLanding(false)
+                return
+            }
+            window.history.replaceState({}, '', `${base}/home`)
+            setActivePage('home')
+            setShowLanding(false)
+            return
+        }
         if (path === '/login') {
             setAuthView('login')
             setShowLanding(false)
@@ -40,16 +57,22 @@ function App() {
     }
 
     useEffect(() => {
-        syncViewFromLocation()
-
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session)
             if (session?.user) {
                 hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
-                setShowLanding(false)
+                syncViewFromLocation(session.user)
             }
+            if (window.location.hash) {
+                window.history.replaceState(
+                    {},
+                    '',
+                    window.location.pathname + window.location.search
+                )
+            }
+            setBootstrapping(false)
         })
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -58,7 +81,7 @@ function App() {
                 hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
-                setShowLanding(false)
+                syncViewFromLocation(session.user)
             } else {
                 if (hadUserRef.current) setShowLanding(true)
                 hadUserRef.current = false
@@ -99,11 +122,29 @@ function App() {
 
     useEffect(() => {
         const handlePopState = () => {
-            syncViewFromLocation()
+            syncViewFromLocation(user)
         }
         window.addEventListener('popstate', handlePopState)
         return () => window.removeEventListener('popstate', handlePopState)
     }, [user])
+
+    useEffect(() => {
+        if (!user && bootstrapping) {
+            syncViewFromLocation(null)
+        }
+    }, [bootstrapping, user])
+
+    const navigateDashboard = (page) => {
+        if (!user) return
+        const base = '/dashboard'
+        const path = page === 'devices' ? `${base}/devices` : `${base}/home`
+        window.history.pushState({ page }, '', path)
+        setActivePage(page)
+    }
+
+    if (bootstrapping) {
+        return null
+    }
 
     if (showLanding) {
         return (
@@ -138,14 +179,14 @@ function App() {
                 <div className="sidebar-menu">
                     <div
                         className={`sidebar-item ${activePage === 'home' ? 'active' : ''}`}
-                        onClick={() => setActivePage('home')}
+                        onClick={() => navigateDashboard('home')}
                     >
                         <span className="sidebar-item-icon">🏠</span>
                         <span className="sidebar-item-text">Homepage</span>
                     </div>
                     <div
                         className={`sidebar-item ${activePage === 'devices' ? 'active' : ''}`}
-                        onClick={() => setActivePage('devices')}
+                        onClick={() => navigateDashboard('devices')}
                     >
                         <span className="sidebar-item-icon">📱</span>
                         <span className="sidebar-item-text">Device Management Page</span>
