@@ -9,19 +9,37 @@ function LoginPage({ onLogin, onGoToSignUp }) {
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
 
+    // email check
+    const isValidEmail = (email) => {
+        const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        return pattern.test(email)
+    }
+
     const handleLogin = async (e) => {
         e.preventDefault()
         setError('')
+
+        // input check
+        if (!email.trim() || !password.trim()) {
+            setError('Email and password are required')
+            return
+        }
+
+        if (!isValidEmail(email.trim())) {
+            setError('Enter a valid email address')
+            return
+        }
+
         setLoading(true)
 
         try {
             const { data, error: signInError } = await supabase.auth.signInWithPassword({
-                email,
+                email: email.trim(),
                 password
             })
 
             if (signInError) {
-                setError(signInError.message)
+                setError('Invalid email or password')
                 return
             }
 
