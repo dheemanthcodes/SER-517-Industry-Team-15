@@ -1592,3 +1592,191 @@ form+.sbui-divider {
 .btn-primary-save:hover {
     background: #020617;
 }
+
+.app-layout {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+    background: #f4f5f7;
+}
+
+.sidebar {
+    width: 280px;
+    min-width: 280px;
+    max-width: 280px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(220, 38, 38, 0.14) 0%, rgba(220, 38, 38, 0) 28%),
+        linear-gradient(180deg, #1a1633 0%, #17172d 100%);
+    color: #ffffff;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.sidebar.collapsed {
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+}
+
+.sidebar.expanded {
+    width: 280px;
+    min-width: 280px;
+    max-width: 280px;
+}
+
+.sidebar-header {
+    width: 100%;
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 16px;
+    box-sizing: border-box;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    max-width: calc(100% - 48px);
+    overflow: hidden;
+}
+
+.sidebar-brand-logo {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px;
+    min-height: 32px;
+    max-width: 32px !important;
+    max-height: 32px !important;
+    object-fit: contain;
+    display: block;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 3px;
+    box-sizing: border-box;
+}
+
+.sidebar-logo {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-toggle {
+    border: none;
+    background: transparent;
+    color: #ffffff;
+    font-size: 22px;
+    line-height: 1;
+    padding: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.sidebar-menu {
+    flex: 1;
+    padding: 16px 0;
+}
+
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    box-sizing: border-box;
+}
+
+.sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-item.active {
+    background: rgba(255, 255, 255, 0.12);
+    border-left: 3px solid #ef2b2a;
+}
+
+.sidebar-item-icon {
+    width: 22px;
+    min-width: 22px;
+    text-align: center;
+    font-size: 18px;
+}
+
+.sidebar-item-text {
+    font-size: 15px;
+    white-space: nowrap;
+}
+
+.sidebar.collapsed .sidebar-item {
+    justify-content: center;
+    padding: 14px 10px;
+}
+
+.sidebar-user-panel {
+    margin: auto 16px 16px;
+    padding: 16px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-sizing: border-box;
+}
+
+.sidebar-user-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+    margin-bottom: 8px;
+}
+
+.sidebar-user-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+.sidebar-user-email {
+    margin-top: 4px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.78);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.sidebar-signout-btn {
+    margin-top: 14px;
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    background: #ef2b2a;
+    color: #ffffff;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.main-content {
+    flex: 1;
+    min-width: 0;
+    min-height: 100vh;
+    background: #f4f5f7;
+}
