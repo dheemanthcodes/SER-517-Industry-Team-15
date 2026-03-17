@@ -1,37 +1,97 @@
-import { Card, Button, Typography, Divider } from '@supabase/ui'
+function LandingPage() {
+  return (
+    <div className="dashboard-container">
+      <div className="dashboard-header">
+        <h1>Dashboard</h1>
+        <p>Overview of ambulance assets and system status</p>
+      </div>
 
-function LandingPage({ user, onLogout }) {
-    return (
-        <div className="auth-container">
-            <Card className="auth-card">
-                <Typography.Title level={3}>
-                    Welcome back!
-                </Typography.Title>
-
-                <Divider />
-
-                <Typography.Text>
-                    Logged in as: <strong>{user.email || user.username}</strong>
-                </Typography.Text>
-
-                {user.user_metadata?.avatar_url && (
-                    <div style={{ marginTop: '16px', textAlign: 'center' }}>
-                        <img
-                            src={user.user_metadata.avatar_url}
-                            alt="Profile"
-                            style={{ borderRadius: '50%', width: '64px', height: '64px' }}
-                        />
-                    </div>
-                )}
-
-                <Divider />
-
-                <Button block onClick={onLogout}>
-                    Sign Out
-                </Button>
-            </Card>
+      <div className="dashboard-cards">
+        <div className="dashboard-card">
+          <h3>Active Ambulances</h3>
+          <p className="dashboard-number">12</p>
         </div>
-    )
+
+        <div className="dashboard-card">
+          <h3>Tracked Drug Boxes</h3>
+          <p className="dashboard-number">28</p>
+        </div>
+
+        <div className="dashboard-card">
+          <h3>Open Alerts</h3>
+          <p className="dashboard-number">3</p>
+        </div>
+
+        <div className="dashboard-card">
+          <h3>Base Stations Online</h3>
+          <p className="dashboard-number">5 / 6</p>
+        </div>
+      </div>
+
+      <div className="dashboard-panels">
+        <div className="dashboard-panel dashboard-panel-large">
+          <div className="dashboard-panel-header">
+            <h2>Map View</h2>
+          </div>
+
+          <div className="dashboard-panel-body">
+            <div className="dashboard-map-frame">
+              <iframe
+                title="Ambulance Tracking Map"
+                src="https://www.openstreetmap.org/export/embed.html?bbox=-112.12%2C33.36%2C-111.78%2C33.56&layer=mapnik"
+                className="dashboard-map"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-panel">
+          <div className="dashboard-panel-header">
+            <h2>Open Alerts</h2>
+          </div>
+          <div className="dashboard-panel-body">
+            <div className="dashboard-list-item">
+              <strong>Drug box out of range</strong>
+              <span>Ambulance 201</span>
+            </div>
+            <div className="dashboard-list-item">
+              <strong>Base station offline</strong>
+              <span>Station 3</span>
+            </div>
+            <div className="dashboard-list-item">
+              <strong>Battery low</strong>
+              <span>Beacon Tag 17</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-panel dashboard-panel-wide">
+          <div className="dashboard-panel-header">
+            <h2>Recent Activity</h2>
+          </div>
+          <div className="dashboard-panel-body">
+            <div className="dashboard-list-item">
+              <strong>Ambulance 102 checked in</strong>
+              <span>2 mins ago</span>
+            </div>
+            <div className="dashboard-list-item">
+              <strong>Drug box linked successfully</strong>
+              <span>8 mins ago</span>
+            </div>
+            <div className="dashboard-list-item">
+              <strong>Inventory sync completed</strong>
+              <span>15 mins ago</span>
+            </div>
+            <div className="dashboard-list-item">
+              <strong>Alert acknowledged by operator</strong>
+              <span>22 mins ago</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default LandingPage

@@ -14,38 +14,46 @@ function App() {
     const [activePage, setActivePage] = useState('home')
     const [showLanding, setShowLanding] = useState(true)
     const [authView, setAuthView] = useState('login')
-    const hadUserRef = useRef(false)
     const [bootstrapping, setBootstrapping] = useState(true)
+    const hadUserRef = useRef(false)
 
     const syncViewFromLocation = (currentUser) => {
         const path = window.location.pathname || '/'
+
         if (currentUser) {
             const base = '/dashboard'
+
             if (path.startsWith(base)) {
                 const suffix = path.slice(base.length) || '/'
+
                 if (suffix.startsWith('/devices')) {
                     setActivePage('devices')
                 } else {
                     setActivePage('home')
                 }
+
                 setShowLanding(false)
                 return
             }
+
             window.history.replaceState({}, '', `${base}/home`)
             setActivePage('home')
             setShowLanding(false)
             return
         }
+
         if (path === '/login') {
             setAuthView('login')
             setShowLanding(false)
             return
         }
+
         if (path === '/signup') {
             setAuthView('signup')
             setShowLanding(false)
             return
         }
+
         setShowLanding(true)
     }
 
@@ -59,24 +67,26 @@ function App() {
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session)
+
             if (session?.user) {
                 hadUserRef.current = true
                 setUser(session.user)
                 setIsLoggedIn(true)
                 syncViewFromLocation(session.user)
             }
+
             if (window.location.hash) {
-                window.history.replaceState(
-                    {},
-                    '',
-                    window.location.pathname + window.location.search
-                )
+                window.history.replaceState({}, '', window.location.pathname + window.location.search)
             }
+
             setBootstrapping(false)
         })
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session)
+
             if (session?.user) {
                 hadUserRef.current = true
                 setUser(session.user)
@@ -93,6 +103,21 @@ function App() {
         return () => subscription.unsubscribe()
     }, [])
 
+    useEffect(() => {
+        const handlePopState = () => {
+            syncViewFromLocation(user)
+        }
+
+        window.addEventListener('popstate', handlePopState)
+        return () => window.removeEventListener('popstate', handlePopState)
+    }, [user])
+
+    useEffect(() => {
+        if (!user && bootstrapping) {
+            syncViewFromLocation(null)
+        }
+    }, [bootstrapping, user])
+
     const handleLogin = (userData) => {
         setUser(userData)
         setIsLoggedIn(true)
@@ -105,6 +130,7 @@ function App() {
         } catch (err) {
             
         }
+
         setUser(null)
         setSession(null)
         setIsLoggedIn(false)
@@ -120,24 +146,12 @@ function App() {
         navigateAuth('signup')
     }
 
-    useEffect(() => {
-        const handlePopState = () => {
-            syncViewFromLocation(user)
-        }
-        window.addEventListener('popstate', handlePopState)
-        return () => window.removeEventListener('popstate', handlePopState)
-    }, [user])
-
-    useEffect(() => {
-        if (!user && bootstrapping) {
-            syncViewFromLocation(null)
-        }
-    }, [bootstrapping, user])
-
     const navigateDashboard = (page) => {
         if (!user) return
+
         const base = '/dashboard'
         const path = page === 'devices' ? `${base}/devices` : `${base}/home`
+
         window.history.pushState({ page }, '', path)
         setActivePage(page)
     }
@@ -163,45 +177,83 @@ function App() {
         )
     }
 
+    const userDisplayName =
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        user?.email ||
+        user?.username ||
+        'User'
+
+    const userEmail = user?.email || user?.username || 'No email available'
+
     return (
         <div className="app-layout">
-           
-            <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : 'expanded'}`}>
+            <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : 'expanded'}`}>
                 <div className="sidebar-header">
-                    {!sidebarCollapsed && <span className="sidebar-logo">App</span>}
+                    {!sidebarCollapsed && (
+                        <div className="sidebar-brand">
+                            <img
+                                src="/logo.png"
+                                alt="Ambulance Tracker"
+                                className="sidebar-brand-logo"
+                            />
+                            <span className="sidebar-logo">
+                                <span>Ambulance</span>
+                                <span>Tracker</span>
+                            </span>
+                        </div>
+                    )}
+
                     <button
+                        type="button"
                         className="sidebar-toggle"
                         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                     >
                         {sidebarCollapsed ? '☰' : '←'}
                     </button>
                 </div>
+
                 <div className="sidebar-menu">
                     <div
                         className={`sidebar-item ${activePage === 'home' ? 'active' : ''}`}
                         onClick={() => navigateDashboard('home')}
                     >
                         <span className="sidebar-item-icon">🏠</span>
-                        <span className="sidebar-item-text">Homepage</span>
+                        {!sidebarCollapsed && <span className="sidebar-item-text">Homepage</span>}
                     </div>
+
                     <div
                         className={`sidebar-item ${activePage === 'devices' ? 'active' : ''}`}
                         onClick={() => navigateDashboard('devices')}
                     >
                         <span className="sidebar-item-icon">📱</span>
-                        <span className="sidebar-item-text">Device Management Page</span>
+                        {!sidebarCollapsed && (
+                            <span className="sidebar-item-text">Device Management Page</span>
+                        )}
                     </div>
                 </div>
-            </div>
 
-            
-            <div className="main-content">
-                {activePage === 'home' ? (
-                    <LandingPage user={user} onLogout={handleLogout} />
-                ) : (
-                    <DeviceManagement />
+                {!sidebarCollapsed && (
+                    <div className="sidebar-user-panel">
+                        <div className="sidebar-user-label">Logged in as</div>
+                        <div className="sidebar-user-name">{userDisplayName}</div>
+                        <div className="sidebar-user-email">{userEmail}</div>
+
+                        <button
+                            type="button"
+                            className="sidebar-signout-btn"
+                            onClick={handleLogout}
+                        >
+                            Sign Out
+                        </button>
+                    </div>
                 )}
-            </div>
+            </aside>
+
+            <main className="main-content">
+                {activePage === 'home' ? <LandingPage /> : <DeviceManagement />}
+            </main>
         </div>
     )
 }
