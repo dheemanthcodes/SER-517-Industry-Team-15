@@ -1,5 +1,9 @@
+import { useState } from 'react'
+
 function EventHistory() {
-    const events = [
+    const [selectedType, setSelectedType] = useState('all')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [events, setEvents] = useState([
         {
             id: 1,
             type: 'Alert',
@@ -10,14 +14,6 @@ function EventHistory() {
         },
         {
             id: 2,
-            type: 'Sync',
-            vehicle: 'Ambulance 102',
-            description: 'Inventory sync completed',
-            timestamp: '2026-03-16 08:54 AM',
-            status: 'Completed',
-        },
-        {
-            id: 3,
             type: 'Assignment',
             vehicle: 'Ambulance 314',
             description: 'Drug box linked successfully',
@@ -25,22 +21,39 @@ function EventHistory() {
             status: 'Completed',
         },
         {
-            id: 4,
+            id: 3,
             type: 'Alert',
             vehicle: 'Ambulance 118',
             description: 'Base station connection lost',
             timestamp: '2026-03-16 08:05 AM',
             status: 'Resolved',
         },
-        {
-            id: 5,
-            type: 'Battery',
-            vehicle: 'Beacon Tag 17',
-            description: 'Battery reported low level',
-            timestamp: '2026-03-16 07:48 AM',
-            status: 'Open',
-        },
-    ]
+    ])
+
+    const handleStatusChange = (id, newStatus) => {
+        const updatedEvents = events.map((event) =>
+            event.id === id ? { ...event, status: newStatus } : event
+        )
+
+        setEvents(updatedEvents)
+    }
+
+    const filteredEvents = events.filter((event) => {
+        const matchesType =
+            selectedType === 'all' ||
+            event.type.toLowerCase() === selectedType
+
+        const searchValue = searchTerm.toLowerCase()
+
+        const matchesSearch =
+            event.type.toLowerCase().includes(searchValue) ||
+            event.vehicle.toLowerCase().includes(searchValue) ||
+            event.description.toLowerCase().includes(searchValue) ||
+            event.timestamp.toLowerCase().includes(searchValue) ||
+            event.status.toLowerCase().includes(searchValue)
+
+        return matchesType && matchesSearch
+    })
 
     return (
         <div className="event-history-container">
@@ -54,12 +67,17 @@ function EventHistory() {
                     type="text"
                     placeholder="Search events"
                     className="event-history-search"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                 />
 
-                <select className="event-history-filter" defaultValue="all">
+                <select
+                    className="event-history-filter"
+                    value={selectedType}
+                    onChange={(e) => setSelectedType(e.target.value)}
+                >
                     <option value="all">All Events</option>
                     <option value="alert">Alerts</option>
-                    <option value="sync">Sync</option>
                     <option value="assignment">Assignments</option>
                     <option value="battery">Battery</option>
                 </select>
@@ -74,17 +92,29 @@ function EventHistory() {
                     <span>Status</span>
                 </div>
 
-                {events.map((event) => (
-                    <div key={event.id} className="event-history-row">
-                        <span>{event.type}</span>
-                        <span>{event.vehicle}</span>
-                        <span>{event.description}</span>
-                        <span>{event.timestamp}</span>
-                        <span className={`event-status event-status-${event.status.toLowerCase()}`}>
-                            {event.status}
-                        </span>
+                {filteredEvents.length > 0 ? (
+                    filteredEvents.map((event) => (
+                        <div key={event.id} className="event-history-row">
+                            <span>{event.type}</span>
+                            <span>{event.vehicle}</span>
+                            <span>{event.description}</span>
+                            <span>{event.timestamp}</span>
+                            <select
+                                className={`event-status event-status-${event.status.toLowerCase()}`}
+                                value={event.status}
+                                onChange={(e) => handleStatusChange(event.id, e.target.value)}
+                            >
+                                <option value="Open">Open</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Resolved">Resolved</option>
+                            </select>
+                        </div>
+                    ))
+                ) : (
+                    <div className="event-history-empty">
+                        No events found
                     </div>
-                ))}
+                )}
             </div>
         </div>
     )
