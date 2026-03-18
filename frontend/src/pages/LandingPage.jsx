@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import AlertPopup from "../components/AlertPopup";
+import { addAlert } from "../utils/alertStore";
 
 function LandingPage() {
   const [alertsQueue, setAlertsQueue] = useState([]);
   const [currentAlert, setCurrentAlert] = useState(null);
 
   useEffect(() => {
+    const hasShownAlerts = sessionStorage.getItem("alertsShown");
+
+    if (hasShownAlerts) return;
+
     const timer = setTimeout(() => {
       const mockAlerts = [
         {
@@ -22,12 +27,25 @@ function LandingPage() {
 
       setAlertsQueue(mockAlerts);
       setCurrentAlert(mockAlerts[0]);
-    }, 5000);
+
+      sessionStorage.setItem("alertsShown", "true");
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, []);
 
   const handleCloseAlert = () => {
+    if (!currentAlert) return;
+
+    addAlert({
+      id: Date.now() + Math.random(),
+      type: "Alert",
+      vehicle: currentAlert.description,
+      description: currentAlert.title,
+      timestamp: new Date().toLocaleString(),
+      status: "Open",
+    });
+
     const remaining = alertsQueue.slice(1);
     setAlertsQueue(remaining);
     setCurrentAlert(remaining[0] || null);
@@ -125,7 +143,6 @@ function LandingPage() {
         </div>
       </div>
 
-      {/* ALERT POPUP */}
       <AlertPopup alert={currentAlert} onClose={handleCloseAlert} />
     </div>
   );
