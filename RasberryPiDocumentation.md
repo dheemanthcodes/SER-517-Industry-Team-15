@@ -121,3 +121,70 @@ Select Direct connection type when prompted
 Authentication will use the Pi's system credentials
 
 Once connected, you should see the Raspberry Pi desktop rendered in the VNC Viewer window.
+
+Section 3: Connecting a Bluetooth Device via Commands
+The final step was pairing and connecting a Bluetooth device — entirely through the terminal using the bluetoothctl interactive utility, without any graphical Bluetooth manager.
+3.1 Verify Bluetooth is Available
+Check that the Bluetooth adapter is detected:
+bashhciconfig
+# or
+bluetoothctl show
+Ensure the adapter is UP and the service is running:
+bashsudo systemctl status bluetooth
+sudo systemctl enable bluetooth
+sudo systemctl start bluetooth
+3.2 Enter the bluetoothctl Shell
+Launch the interactive Bluetooth control utility:
+bashbluetoothctl
+[bluetooth]#
+All subsequent commands in this section are run inside the bluetoothctl shell, indicated by the [bluetooth]# prompt.
+3.3 Power On and Set Up the Controller
+[bluetooth]# power on
+[bluetooth]# agent on
+[bluetooth]# default-agent
+The agent handles pairing requests (PIN confirmations, passkeys) automatically.
+3.4 Discover Nearby Devices
+Put the Pi in discovery mode and scan. Make sure your target device is in pairing mode first:
+[bluetooth]# scan on
+Wait several seconds. Nearby devices will appear:
+[NEW] Device AA:BB:CC:DD:EE:FF  DeviceName
+[NEW] Device 11:22:33:44:55:66  AnotherDevice
+Once you see your target device, stop scanning:
+[bluetooth]# scan off
+
+Note: Write down the MAC address (e.g., AA:BB:CC:DD:EE:FF) of your device — you'll use it in the next steps.
+
+3.5 Pair the Device
+[bluetooth]# pair AA:BB:CC:DD:EE:FF
+You may be prompted to confirm a passkey on both devices. Type yes to confirm:
+Request confirmation
+Confirm passkey 123456 (yes/no): yes
+Pairing successful
+3.6 Trust the Device
+Trusting the device allows it to auto-connect in future sessions without re-pairing:
+[bluetooth]# trust AA:BB:CC:DD:EE:FF
+3.7 Connect the Device
+[bluetooth]# connect AA:BB:CC:DD:EE:FF
+A successful output looks like:
+Attempting to connect to AA:BB:CC:DD:EE:FF
+Connection successful
+3.8 Verify the Connection
+[bluetooth]# info AA:BB:CC:DD:EE:FF
+Look for Connected: yes in the output. Then exit the shell:
+[bluetooth]# quit
+3.9 Troubleshooting Bluetooth
+Device not appearing in scan
+
+Ensure the device is actively in pairing/discoverable mode
+Restart the Bluetooth service: sudo systemctl restart bluetooth
+Run: sudo hciconfig hci0 up
+
+Pairing fails with "Authentication Failed"
+
+Remove any old pairing first: remove AA:BB:CC:DD:EE:FF — then retry
+Try running as root: sudo bluetoothctl
+
+Device pairs but won't connect
+
+Check device info: bluetoothctl info AA:BB:CC:DD:EE:FF
+Ensure the relevant Bluetooth profile service is active on the Pi
