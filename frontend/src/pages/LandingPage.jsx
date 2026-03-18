@@ -1,4 +1,38 @@
+import { useEffect, useState } from "react";
+import AlertPopup from "../components/AlertPopup";
+
 function LandingPage() {
+  const [alertsQueue, setAlertsQueue] = useState([]);
+  const [currentAlert, setCurrentAlert] = useState(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const mockAlerts = [
+        {
+          id: 1,
+          title: "Drug box moved out of ambulance",
+          description: "Ambulance 888",
+        },
+        {
+          id: 2,
+          title: "Base station connection lost",
+          description: "Ambulance 264",
+        },
+      ];
+
+      setAlertsQueue(mockAlerts);
+      setCurrentAlert(mockAlerts[0]);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleCloseAlert = () => {
+    const remaining = alertsQueue.slice(1);
+    setAlertsQueue(remaining);
+    setCurrentAlert(remaining[0] || null);
+  };
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
@@ -90,8 +124,11 @@ function LandingPage() {
           </div>
         </div>
       </div>
+
+      {/* ALERT POPUP */}
+      <AlertPopup alert={currentAlert} onClose={handleCloseAlert} />
     </div>
-  )
+  );
 }
 
-export default LandingPage
+export default LandingPage;
