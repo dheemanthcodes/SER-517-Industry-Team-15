@@ -64,3 +64,60 @@ Reboot and verify the connection re-establishes automatically:
 bashsudo reboot
 # After reboot:
 ping -c 4 8.8.8.8
+
+
+Section 2: Setting Up RealVNC for Remote Desktop
+With WiFi working, the next step was enabling remote desktop access via RealVNC. This involved enabling the VNC server on the Pi, configuring the viewer, and troubleshooting several common issues along the way.
+2.1 Enabling the VNC Server
+RealVNC Server comes pre-installed on Raspberry Pi OS Desktop. Enable it via raspi-config:
+bashsudo raspi-config
+Navigate to: Interface Options → VNC → Enable → Finish
+Alternatively, enable it directly from the command line:
+bashsudo systemctl enable vncserver-x11-serviced
+sudo systemctl start vncserver-x11-serviced
+Verify the VNC service is running:
+bashsudo systemctl status vncserver-x11-serviced
+2.2 Check the VNC Port
+By default, RealVNC listens on port 5900. Confirm with:
+bashsudo ss -tlnp | grep vnc
+# or
+sudo netstat -tlnp | grep 5900
+2.3 Figuring Out the Viewer Side
+On the connecting machine, download RealVNC Viewer from realvnc.com. When connecting:
+
+Enter the Pi's IP address (e.g., 192.168.1.42) in the address bar
+Use the default port 5900, or just enter the IP — VNC Viewer fills in the port automatically
+For authentication, use your Pi's system username and password (default: pi / raspberry)
+
+
+Common Issue: If you see Cannot currently show the desktop, the Pi may be booting to a virtual framebuffer with no display attached. See Section 2.4 below.
+
+2.4 Troubleshooting — Cannot Show Desktop
+This is one of the most common VNC issues on headless Pis. The VNC server needs a display to share, but without a physical monitor attached, it may not create one.
+Fix 1: Set a Virtual Resolution
+bashsudo raspi-config
+# Display Options → VNC Resolution → Set to 1280x720
+Fix 2: Force HDMI Output in config.txt
+bashsudo nano /boot/config.txt
+Add or uncomment these lines:
+hdmi_force_hotplug=1
+hdmi_group=2
+hdmi_mode=85    # 1280x720 @ 60Hz
+Fix 3: Restart VNC Service
+bashsudo systemctl restart vncserver-x11-serviced
+2.5 Troubleshooting — Authentication Failures
+If VNC Viewer keeps rejecting credentials:
+
+Ensure you're using the Pi's system username/password, not a RealVNC cloud account
+Switch to direct (non-cloud) connection mode in VNC Viewer
+Reset the VNC password if needed:
+
+bashsudo vncpasswd -service
+2.6 Connecting Without a RealVNC Account
+RealVNC Viewer may prompt you to sign in to a cloud account. This is optional. To connect directly:
+
+In VNC Viewer, choose Connect directly or type the IP address manually
+Select Direct connection type when prompted
+Authentication will use the Pi's system credentials
+
+Once connected, you should see the Raspberry Pi desktop rendered in the VNC Viewer window.
