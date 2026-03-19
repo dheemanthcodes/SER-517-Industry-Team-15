@@ -7,53 +7,8 @@ import AddDeviceModal from '../components/AddDeviceModal'
 function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
 
-    const sampleVehicles = [
-        {
-            id: 'sample-1',
-            unit_number: 'AMB-001',
-            station_name: 'Scottsdale Station 3',
-            created_at: new Date().toISOString(),
-            assets: [
-                {
-                    id: 'box-1',
-                    type: 'BOX',
-                    label: 'Primary Drug Box',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:89'
-                    }
-                },
-                {
-                    id: 'box-2',
-                    type: 'BOX',
-                    label: 'Secondary Drug Box',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:90'
-                    }
-                },
-                {
-                    id: 'pouch-1',
-                    type: 'POUCH',
-                    label: 'Controlled Substances A',
-                    parent_asset_id: 'box-1',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:91'
-                    }
-                },
-                {
-                    id: 'pouch-2',
-                    type: 'POUCH',
-                    label: 'Controlled Substances B',
-                    parent_asset_id: 'box-2',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:92'
-                    }
-                }
-            ]
-        }
-    ]
-
-    const [vehicles, setVehicles] = useState(sampleVehicles)
-    const [expandedVehicle, setExpandedVehicle] = useState('sample-1')
+    const [vehicles, setVehicles] = useState([])
+    const [expandedVehicle, setExpandedVehicle] = useState(null)
     const [fetchLoading, setFetchLoading] = useState(true)
     const [error, setError] = useState(null)
     const [editingValues, setEditingValues] = useState({})
@@ -86,8 +41,7 @@ function DeviceManagement() {
                 throw fetchError
             }
 
-            const realVehicles = (data || []).filter(v => !v.id?.startsWith('sample-'))
-            setVehicles(sampleVehicles)
+            setVehicles(data || [])
         } catch (err) {
             console.error('Error fetching vehicles:', err)
             setError('Failed to load vehicles. Please try again.')
@@ -219,48 +173,33 @@ function DeviceManagement() {
             setExpandedVehicle(null)
         }
     }
-    const handleAddSampleVehicle = (formData) => {
-    const newVehicleId = `sample-${Date.now()}`
+    const handleRegisterAmbulance = async (formData) => {
+        const unitNumber = (formData.ambulanceNumber || '').trim()
+        if (!unitNumber) throw new Error('Unit number is required.')
 
-    const newVehicle = {
-        id: newVehicleId,
-        unit_number: formData.ambulanceNumber,
-        station_name: 'Main Station',
-        created_at: new Date().toISOString(),
-        assets: [
-            {
-                id: `box-1-${newVehicleId}`,
-                type: 'BOX',
-                label: formData.drugBox1Label,
-                ble_tag: { identifier: formData.drugBox1BleId }
-            },
-            {
-                id: `box-2-${newVehicleId}`,
-                type: 'BOX',
-                label: formData.drugBox2Label,
-                ble_tag: { identifier: formData.drugBox2BleId }
-            },
-            {
-                id: `pouch-1-${newVehicleId}`,
-                type: 'POUCH',
-                label: formData.narcoticsPouch1Label,
-                parent_asset_id: `box-1-${newVehicleId}`,
-                ble_tag: { identifier: formData.narcoticsPouch1BleId }
-            },
-            {
-                id: `pouch-2-${newVehicleId}`,
-                type: 'POUCH',
-                label: formData.narcoticsPouch2Label,
-                parent_asset_id: `box-2-${newVehicleId}`,
-                ble_tag: { identifier: formData.narcoticsPouch2BleId }
-            }
-        ]
+        const payload = {
+            p_unit_number: unitNumber,
+            p_station_name: 'Main Station',
+
+            p_box1_label: (formData.drugBox1Label || '').trim(),
+            p_box1_ble_id: (formData.drugBox1BleId || '').trim(),
+            p_box2_label: (formData.drugBox2Label || '').trim(),
+            p_box2_ble_id: (formData.drugBox2BleId || '').trim(),
+
+            p_pouch1_label: (formData.narcoticsPouch1Label || '').trim(),
+            p_pouch1_ble_id: (formData.narcoticsPouch1BleId || '').trim(),
+            p_pouch2_label: (formData.narcoticsPouch2Label || '').trim(),
+            p_pouch2_ble_id: (formData.narcoticsPouch2BleId || '').trim()
+        }
+
+        // Your RLS policy blocks client inserts into `vehicles`/`assets`,
+        // so we use an RPC function (SECURITY DEFINER) to do the write safely.
+        const { data, error: rpcError } = await supabase.rpc('register_ambulance', payload)
+        if (rpcError) throw rpcError
+
+        await fetchVehicles()
+        if (data) setExpandedVehicle(data)
     }
-
-    setVehicles(prev => [...prev, newVehicle])
-    console.log(vehicles)
-    setExpandedVehicle(newVehicleId)
-}
     return (
         <div className="devices-page">
             <div className="page-container">
@@ -565,7 +504,7 @@ function DeviceManagement() {
                 <AddDeviceModal
                     show={showAddDeviceModal}
                     onClose={() => setShowAddDeviceModal(false)}
-                    onSuccess={handleAddSampleVehicle}
+                    onSuccess={handleRegisterAmbulance}
                 />
             </div>
         </div>
