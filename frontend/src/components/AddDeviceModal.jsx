@@ -20,23 +20,34 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     const handleAddDevice = async (e) => {
         e.preventDefault()
 
-        if (onSuccess) {
-            onSuccess(deviceForm)
+        setLoading(true)
+        setError(null)
+        try {
+            if (onSuccess) await onSuccess(deviceForm)
+
+            setDeviceForm({
+                ambulanceNumber: '',
+                drugBox1Label: '',
+                drugBox1BleId: '',
+                drugBox2Label: '',
+                drugBox2BleId: '',
+                narcoticsPouch1Label: '',
+                narcoticsPouch1BleId: '',
+                narcoticsPouch2Label: '',
+                narcoticsPouch2BleId: ''
+            })
+
+            onClose()
+        } catch (err) {
+            const message =
+                err?.message ||
+                err?.error_description ||
+                err?.details ||
+                'Failed to register ambulance. Please try again.'
+            setError(message)
+        } finally {
+            setLoading(false)
         }
-
-        setDeviceForm({
-            ambulanceNumber: '',
-            drugBox1Label: '',
-            drugBox1BleId: '',
-            drugBox2Label: '',
-            drugBox2BleId: '',
-            narcoticsPouch1Label: '',
-            narcoticsPouch1BleId: '',
-            narcoticsPouch2Label: '',
-            narcoticsPouch2BleId: ''
-        })
-
-        onClose()
     }
 
     if (!show) return null
