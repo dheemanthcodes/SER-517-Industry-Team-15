@@ -1,3 +1,5 @@
+import { supabase } from '../supabaseClient'
+
 const STORAGE_KEY = "sessionAlerts";
 
 export const addAlert = (alert) => {
@@ -23,6 +25,15 @@ export const addAlert = (alert) => {
   if (!exists) {
     const updated = [alert, ...existing];
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+    // Insert to database
+    supabase.from('alerts').insert({
+      asset_id: alert.vehicle,
+      vehicle_id: null,
+      status: 'OPEN',
+      reason: alert.description,
+      opened_at: new Date(alert.timestamp).toISOString()
+    }).catch(error => console.error('Error inserting alert to database:', error));
   }
 };
 

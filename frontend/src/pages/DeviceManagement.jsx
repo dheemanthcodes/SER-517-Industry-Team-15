@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
+import { addAlert } from '../utils/alertStore'
 
 
 function DeviceManagement() {
@@ -206,9 +207,19 @@ function DeviceManagement() {
         setEditingVehicleId(null)
         setEditingVehicleData(null)
         setEditingError('')
+
+        // Log device update event
+        supabase.from('alerts').insert({
+            asset_id: editingVehicleId,
+            vehicle_id: editingVehicleId,
+            status: 'OPEN',
+            reason: `Device updated: ${unitNumber}`,
+            opened_at: new Date().toISOString()
+        }).catch(error => console.error('Error logging device update event:', error))
     }
 
     const deleteData = (vehicleId) => {
+        const vehicle = vehicles.find(v => v.id === vehicleId)
         setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
         if (editingVehicleId === vehicleId) {
             setEditingVehicleId(null)
@@ -218,49 +229,68 @@ function DeviceManagement() {
         if (expandedVehicle === vehicleId) {
             setExpandedVehicle(null)
         }
+
+        // Log device delete event
+        if (vehicle) {
+            supabase.from('alerts').insert({
+                asset_id: vehicleId,
+                vehicle_id: vehicleId,
+                status: 'OPEN',
+                reason: `Device deleted: ${vehicle.unit_number}`,
+                opened_at: new Date().toISOString()
+            }).catch(error => console.error('Error logging device delete event:', error))
+        }
     }
     const handleAddSampleVehicle = (formData) => {
-    const newVehicleId = `sample-${Date.now()}`
+        const newVehicleId = `sample-${Date.now()}`
 
-    const newVehicle = {
-        id: newVehicleId,
-        unit_number: formData.ambulanceNumber,
-        station_name: 'Main Station',
-        created_at: new Date().toISOString(),
-        assets: [
-            {
-                id: `box-1-${newVehicleId}`,
-                type: 'BOX',
-                label: formData.drugBox1Label,
-                ble_tag: { identifier: formData.drugBox1BleId }
-            },
-            {
-                id: `box-2-${newVehicleId}`,
-                type: 'BOX',
-                label: formData.drugBox2Label,
-                ble_tag: { identifier: formData.drugBox2BleId }
-            },
-            {
-                id: `pouch-1-${newVehicleId}`,
-                type: 'POUCH',
-                label: formData.narcoticsPouch1Label,
-                parent_asset_id: `box-1-${newVehicleId}`,
-                ble_tag: { identifier: formData.narcoticsPouch1BleId }
-            },
-            {
-                id: `pouch-2-${newVehicleId}`,
-                type: 'POUCH',
-                label: formData.narcoticsPouch2Label,
-                parent_asset_id: `box-2-${newVehicleId}`,
-                ble_tag: { identifier: formData.narcoticsPouch2BleId }
-            }
-        ]
+        const newVehicle = {
+            id: newVehicleId,
+            unit_number: formData.ambulanceNumber,
+            station_name: 'Main Station',
+            created_at: new Date().toISOString(),
+            assets: [
+                {
+                    id: `box-1-${newVehicleId}`,
+                    type: 'BOX',
+                    label: formData.drugBox1Label,
+                    ble_tag: { identifier: formData.drugBox1BleId }
+                },
+                {
+                    id: `box-2-${newVehicleId}`,
+                    type: 'BOX',
+                    label: formData.drugBox2Label,
+                    ble_tag: { identifier: formData.drugBox2BleId }
+                },
+                {
+                    id: `pouch-1-${newVehicleId}`,
+                    type: 'POUCH',
+                    label: formData.narcoticsPouch1Label,
+                    parent_asset_id: `box-1-${newVehicleId}`,
+                    ble_tag: { identifier: formData.narcoticsPouch1BleId }
+                },
+                {
+                    id: `pouch-2-${newVehicleId}`,
+                    type: 'POUCH',
+                    label: formData.narcoticsPouch2Label,
+                    parent_asset_id: `box-2-${newVehicleId}`,
+                    ble_tag: { identifier: formData.narcoticsPouch2BleId }
+                }
+            ]
+        }
+
+        setVehicles(prev => [...prev, newVehicle])
+        setExpandedVehicle(newVehicleId)
+
+        // Log device add event
+        supabase.from('alerts').insert({
+            asset_id: newVehicleId,
+            vehicle_id: newVehicleId,
+            status: 'OPEN',
+            reason: `Device added: ${formData.ambulanceNumber}`,
+            opened_at: new Date().toISOString()
+        }).catch(error => console.error('Error logging device add event:', error))
     }
-
-    setVehicles(prev => [...prev, newVehicle])
-    console.log(vehicles)
-    setExpandedVehicle(newVehicleId)
-}
     return (
         <div className="devices-page">
             <div className="page-container">
