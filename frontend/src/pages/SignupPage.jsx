@@ -11,10 +11,43 @@ function SignupPage({ onGoToLogin }) {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
+  // email check
+  const isValidEmail = (email) => {
+    const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return pattern.test(email)
+  }
+
+  // password check
+  const isStrongPassword = (password) => {
+    const pattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/
+    return pattern.test(password)
+  }
+
   const handleSignUp = async (e) => {
     e.preventDefault()
     setError('')
     setMessage('')
+
+    // input check
+    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+      setError('All fields are required')
+      return
+    }
+
+    if (!isValidEmail(email.trim())) {
+      setError('Enter a valid email address')
+      return
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long')
+      return
+    }
+
+    if (!isStrongPassword(password)) {
+      setError('Password must include uppercase, lowercase, and a number')
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
@@ -24,7 +57,7 @@ function SignupPage({ onGoToLogin }) {
     setLoading(true)
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password
       })
 
