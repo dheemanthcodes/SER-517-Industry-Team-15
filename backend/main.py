@@ -4,10 +4,9 @@ from pi_service import get_bluetooth_data, scan_devices, get_paired_devices, pai
 
 app = FastAPI(title="Pi Bluetooth API")
 
-# Setup CORS to allow the frontend to interact with the backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this depending on your frontend origin
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,15 +18,11 @@ def read_root():
 
 @app.get("/api/bluetooth")
 def fetch_bluetooth_info():
-    """
-    Connect to the Raspberry Pi and retrieve the captured Bluetooth signals.
-    """
     try:
         data = get_bluetooth_data()
         return {"status": "success", "data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/bluetooth/scan")
 def api_scan_devices(seconds: int = 8):
@@ -40,7 +35,6 @@ def api_scan_devices(seconds: int = 8):
         print(f"[ERROR] Scan failed with exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/bluetooth/paired")
 def api_paired_devices():
     try:
@@ -48,7 +42,6 @@ def api_paired_devices():
         return {"status": "success", "data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/bluetooth/pair")
 def api_pair_device(payload: dict):
@@ -60,7 +53,6 @@ def api_pair_device(payload: dict):
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/bluetooth/remove")
 def api_remove_device(payload: dict):
@@ -75,5 +67,4 @@ def api_remove_device(payload: dict):
 
 if __name__ == "__main__":
     import uvicorn
-    # Make sure you have uvicorn installed: pip install uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
