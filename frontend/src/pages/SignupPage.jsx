@@ -11,10 +11,67 @@ function SignupPage({ onGoToLogin }) {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
+  // email check
+  const isValidEmail = (email) => {
+    const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return pattern.test(email)
+  }
+
+  // password check
+  const isStrongPassword = (password) => {
+    const pattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/
+    return pattern.test(password)
+  }
+
+  // auth message
+  const getSignUpErrorMessage = (message) => {
+    if (!message) return 'Sign up failed, please try again'
+
+    const normalized = message.toLowerCase()
+
+    if (normalized.includes('user already registered')) {
+      return 'An account with this email already exists'
+    }
+
+    if (normalized.includes('password should be at least')) {
+      return 'Password does not meet the minimum requirements'
+    }
+
+    if (normalized.includes('invalid email')) {
+      return 'Enter a valid email address'
+    }
+
+    return 'Sign up failed, please try again'
+  }
+
   const handleSignUp = async (e) => {
     e.preventDefault()
     setError('')
     setMessage('')
+
+    // block repeat
+    if (loading) return
+
+    // input check
+    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+      setError('All fields are required')
+      return
+    }
+
+    if (!isValidEmail(email.trim())) {
+      setError('Enter a valid email address')
+      return
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long')
+      return
+    }
+
+    if (!isStrongPassword(password)) {
+      setError('Password must include uppercase, lowercase, and a number')
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
@@ -24,22 +81,27 @@ function SignupPage({ onGoToLogin }) {
     setLoading(true)
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password
       })
 
       if (signUpError) {
-        setError(signUpError.message)
+        setError(getSignUpErrorMessage(signUpError.message))
+        return
+      }
+
+      if (data.user?.identities?.length === 0) {
+        setError('An account with this email already exists')
         return
       }
 
       if (data.user) {
         setMessage('Account created! Please check your email to verify your account.')
       } else {
-        setMessage('Account created! Please check your email to verify your account.')
+        setMessage('Sign up request submitted. Please check your email for next steps.')
       }
     } catch (_err) {
-      setError('An error occurred during sign up')
+      setError('Sign up failed, please try again')
     } finally {
       setLoading(false)
     }
@@ -131,7 +193,7 @@ function SignupPage({ onGoToLogin }) {
                 />
               </div>
 
-              <Button block htmlType="submit" loading={loading}>
+              <Button block htmlType="submit" loading={loading} disabled={loading}>
                 Sign Up
               </Button>
             </form>
