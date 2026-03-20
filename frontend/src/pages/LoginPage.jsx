@@ -9,19 +9,57 @@ function LoginPage({ onLogin, onGoToSignUp }) {
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
 
+    // email validation check
+    const isValidEmail = (email) => {
+        const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        return pattern.test(email)
+    }
+
+    // auth message handling
+    const getLoginErrorMessage = (message) => {
+        if (!message) return 'Login failed, please try again'
+
+        const normalized = message.toLowerCase()
+
+        if (normalized.includes('invalid login credentials')) {
+            return 'Invalid email or password'
+        }
+
+        if (normalized.includes('email not confirmed')) {
+            return 'Please verify your email before signing in'
+        }
+
+        return 'Login failed, please try again'
+    }
+
     const handleLogin = async (e) => {
         e.preventDefault()
         setError('')
+
+        // block repeat
+        if (loading) return
+
+        // input check
+        if (!email.trim() || !password.trim()) {
+            setError('Email and password are required')
+            return
+        }
+
+        if (!isValidEmail(email.trim())) {
+            setError('Enter a valid email address')
+            return
+        }
+
         setLoading(true)
 
         try {
             const { data, error: signInError } = await supabase.auth.signInWithPassword({
-                email,
+                email: email.trim(),
                 password
             })
 
             if (signInError) {
-                setError(signInError.message)
+                setError(getLoginErrorMessage(signInError.message))
                 return
             }
 
@@ -29,7 +67,7 @@ function LoginPage({ onLogin, onGoToSignUp }) {
                 onLogin(data.user)
             }
         } catch (err) {
-            setError('An error occurred during login')
+            setError('Login failed, please try again')
         } finally {
             setLoading(false)
         }
@@ -114,7 +152,7 @@ function LoginPage({ onLogin, onGoToSignUp }) {
                                 />
                             </div>
 
-                            <Button block htmlType="submit" loading={loading}>
+                            <Button block htmlType="submit" loading={loading} disabled={loading || googleLoading}>
                                 Sign In
                             </Button>
                         </form>

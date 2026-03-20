@@ -1,63 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
+import { Button, Input } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
-
 
 function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
 
-    const sampleVehicles = [
-        {
-            id: 'sample-1',
-            unit_number: 'AMB-001',
-            station_name: 'Scottsdale Station 3',
-            created_at: new Date().toISOString(),
-            assets: [
-                {
-                    id: 'box-1',
-                    type: 'BOX',
-                    label: 'Primary Drug Box',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:89'
-                    }
-                },
-                {
-                    id: 'box-2',
-                    type: 'BOX',
-                    label: 'Secondary Drug Box',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:90'
-                    }
-                },
-                {
-                    id: 'pouch-1',
-                    type: 'POUCH',
-                    label: 'Controlled Substances A',
-                    parent_asset_id: 'box-1',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:91'
-                    }
-                },
-                {
-                    id: 'pouch-2',
-                    type: 'POUCH',
-                    label: 'Controlled Substances B',
-                    parent_asset_id: 'box-2',
-                    ble_tag: {
-                        identifier: 'AC:23:3F:A4:12:92'
-                    }
-                }
-            ]
-        }
-    ]
-
-    const [vehicles, setVehicles] = useState(sampleVehicles)
-    const [expandedVehicle, setExpandedVehicle] = useState('sample-1')
+    const [vehicles, setVehicles] = useState([])
+    const [expandedVehicle, setExpandedVehicle] = useState(null)
     const [fetchLoading, setFetchLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [editingValues, setEditingValues] = useState({})
-    const [editingField, setEditingField] = useState(null)
+
     const [editingVehicleId, setEditingVehicleId] = useState(null)
     const [editingVehicleData, setEditingVehicleData] = useState(null)
     const [editingError, setEditingError] = useState('')
@@ -82,12 +35,9 @@ function DeviceManagement() {
                 `)
                 .order('created_at', { ascending: false })
 
-            if (fetchError) {
-                throw fetchError
-            }
+            if (fetchError) throw fetchError
 
-            const realVehicles = (data || []).filter(v => !v.id?.startsWith('sample-'))
-            setVehicles(sampleVehicles)
+            setVehicles(data || [])
         } catch (err) {
             console.error('Error fetching vehicles:', err)
             setError('Failed to load vehicles. Please try again.')
@@ -100,26 +50,11 @@ function DeviceManagement() {
         setExpandedVehicle(expandedVehicle === vehicleId ? null : vehicleId)
     }
 
-    const startEditing = (fieldId) => {
-        setEditingField(fieldId)
-    }
-
-    const saveEdit = (fieldId, assetId, fieldType) => {
-        const newValue = editingValues[fieldId]
-        if (newValue) {
-            console.log(`Saving ${fieldType} for asset ${assetId}: ${newValue}`)
-        }
-        setEditingField(null)
-    }
-
-    const cancelEdit = () => {
-        setEditingField(null)
-    }
-
     const startVehicleEdit = (vehicle) => {
         if (expandedVehicle !== vehicle.id) {
             setExpandedVehicle(vehicle.id)
         }
+
         const copy = JSON.parse(JSON.stringify(vehicle))
         setEditingVehicleId(vehicle.id)
         setEditingVehicleData(copy)
@@ -127,49 +62,59 @@ function DeviceManagement() {
     }
 
     const handleAmbulanceFieldChange = (field, value) => {
-        if (!editingVehicleData) return
-        setEditingVehicleData((prev) => ({
-            ...prev,
-            [field]: value
-        }))
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+            return {
+                ...prev,
+                [field]: value
+            }
+        })
     }
 
     const handleAssetLabelChange = (assetId, value) => {
-        if (!editingVehicleData) return
-        setEditingVehicleData((prev) => ({
-            ...prev,
-            assets: (prev.assets || []).map((asset) =>
-                asset.id === assetId ? { ...asset, label: value } : asset
-            )
-        }))
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+            return {
+                ...prev,
+                assets: (prev.assets || []).map((asset) =>
+                    asset.id === assetId ? { ...asset, label: value } : asset
+                )
+            }
+        })
     }
 
     const handleAssetBleChange = (assetId, value) => {
-        if (!editingVehicleData) return
-        setEditingVehicleData((prev) => ({
-            ...prev,
-            assets: (prev.assets || []).map((asset) =>
-                asset.id === assetId
-                    ? {
-                        ...asset,
-                        ble_tag: {
-                            ...(asset.ble_tag || {}),
-                            identifier: value
-                        }
-                    }
-                    : asset
-            )
-        }))
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+            return {
+                ...prev,
+                assets: (prev.assets || []).map((asset) =>
+                    asset.id === assetId
+                        ? {
+                              ...asset,
+                              ble_tag: {
+                                  ...(asset.ble_tag || {}),
+                                  identifier: value
+                              }
+                          }
+                        : asset
+                )
+            }
+        })
     }
 
     const handleAssetParentChange = (assetId, parentId) => {
-        if (!editingVehicleData) return
-        setEditingVehicleData((prev) => ({
-            ...prev,
-            assets: (prev.assets || []).map((asset) =>
-                asset.id === assetId ? { ...asset, parent_asset_id: parentId || null } : asset
-            )
-        }))
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+            return {
+                ...prev,
+                assets: (prev.assets || []).map((asset) =>
+                    asset.id === assetId
+                        ? { ...asset, parent_asset_id: parentId || null }
+                        : asset
+                )
+            }
+        })
     }
 
     const handleCancelVehicleEdit = () => {
@@ -178,21 +123,26 @@ function DeviceManagement() {
         setEditingError('')
     }
 
-    const handleSaveVehicleEdit = () => {
+    const handleSaveVehicleEdit = async () => {
         if (!editingVehicleId || !editingVehicleData) return
 
-        const unitNumber = (editingVehicleData.unit_number || '').trim()
+        const vehicleIdToSave = editingVehicleId
+        const vehicleDataToSave = editingVehicleData
+        const unitNumber = (vehicleDataToSave.unit_number || '').trim()
+
         if (!unitNumber) {
             setEditingError('Unit number is required.')
             return
         }
 
-        const assets = editingVehicleData.assets || []
+        const assets = vehicleDataToSave.assets || []
         for (const asset of assets) {
             if (asset.type === 'BOX' || asset.type === 'POUCH') {
-                const ble = asset.ble_tag && typeof asset.ble_tag.identifier === 'string'
-                    ? asset.ble_tag.identifier.trim()
-                    : ''
+                const ble =
+                    asset.ble_tag && typeof asset.ble_tag.identifier === 'string'
+                        ? asset.ble_tag.identifier.trim()
+                        : ''
+
                 if (!ble) {
                     setEditingError('All BLE identifiers are required.')
                     return
@@ -200,67 +150,195 @@ function DeviceManagement() {
             }
         }
 
-        setVehicles((prev) =>
-            prev.map((v) => (v.id === editingVehicleId ? editingVehicleData : v))
-        )
-        setEditingVehicleId(null)
-        setEditingVehicleData(null)
-        setEditingError('')
-    }
+        try {
+            const payload = {
+                p_vehicle_id: vehicleIdToSave,
+                p_unit_number: unitNumber,
+                p_station_name: (vehicleDataToSave.station_name || '').trim(),
+                p_assets: (vehicleDataToSave.assets || []).map((asset) => ({
+                    id: asset.id,
+                    type: asset.type,
+                    label: asset.label,
+                    ble_identifier:
+                        asset.ble_tag && typeof asset.ble_tag.identifier === 'string'
+                            ? asset.ble_tag.identifier.trim()
+                            : '',
+                    parent_asset_id: asset.type === 'POUCH' ? asset.parent_asset_id || null : null
+                }))
+            }
 
-    const deleteData = (vehicleId) => {
-        setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
-        if (editingVehicleId === vehicleId) {
+            // Persist updates server-side via RPC because your RLS policy
+            // blocks client updates into `vehicles`/`assets`.
+            const { error: rpcError } = await supabase.rpc(
+                'update_ambulance',
+                payload
+            )
+            if (rpcError) throw rpcError
+
+            setVehicles((prev) =>
+                prev.map((vehicle) =>
+                    vehicle.id === vehicleIdToSave ? vehicleDataToSave : vehicle
+                )
+            )
+            await fetchVehicles()
+            setExpandedVehicle(vehicleIdToSave)
+
             setEditingVehicleId(null)
             setEditingVehicleData(null)
             setEditingError('')
-        }
-        if (expandedVehicle === vehicleId) {
-            setExpandedVehicle(null)
-        }
-    }
-    const handleAddSampleVehicle = (formData) => {
-    const newVehicleId = `sample-${Date.now()}`
 
-    const newVehicle = {
-        id: newVehicleId,
-        unit_number: formData.ambulanceNumber,
-        station_name: 'Main Station',
-        created_at: new Date().toISOString(),
-        assets: [
-            {
-                id: `box-1-${newVehicleId}`,
-                type: 'BOX',
-                label: formData.drugBox1Label,
-                ble_tag: { identifier: formData.drugBox1BleId }
-            },
-            {
-                id: `box-2-${newVehicleId}`,
-                type: 'BOX',
-                label: formData.drugBox2Label,
-                ble_tag: { identifier: formData.drugBox2BleId }
-            },
-            {
-                id: `pouch-1-${newVehicleId}`,
-                type: 'POUCH',
-                label: formData.narcoticsPouch1Label,
-                parent_asset_id: `box-1-${newVehicleId}`,
-                ble_tag: { identifier: formData.narcoticsPouch1BleId }
-            },
-            {
-                id: `pouch-2-${newVehicleId}`,
-                type: 'POUCH',
-                label: formData.narcoticsPouch2Label,
-                parent_asset_id: `box-2-${newVehicleId}`,
-                ble_tag: { identifier: formData.narcoticsPouch2BleId }
+            // UI-level audit entry (not blocking the edit save).
+            try {
+                await supabase.from('alerts').insert({
+                    asset_id: vehicleIdToSave,
+                    vehicle_id: vehicleIdToSave,
+                    status: 'OPEN',
+                    reason: `Device updated: ${unitNumber}`,
+                    opened_at: new Date().toISOString()
+                })
+            } catch (error) {
+                console.error('Error logging device update event:', error)
             }
-        ]
+        } catch (error) {
+            console.error('Error updating device:', error)
+            setEditingError(
+                error?.message || 'Failed to update device. Please try again.'
+            )
+        }
+    }
+    const deleteData = async (vehicleId) => {
+        const vehicle = vehicles.find((v) => v.id === vehicleId)
+        setError(null)
+
+        try {
+            // Delete from Supabase via RPC because direct client writes to
+            // `vehicles`/`assets` are restricted by your RLS policy.
+            const { error: rpcError } = await supabase.rpc('delete_ambulance', {
+                p_vehicle_id: vehicleId
+            })
+            if (rpcError) throw rpcError
+
+            setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
+            if (vehicle) {
+                // Log a UI-level audit entry (separate from telemetry history).
+                await supabase.from('alerts').insert({
+                    asset_id: vehicleId,
+                    vehicle_id: vehicleId,
+                    status: 'OPEN',
+                    reason: `Device deleted: ${vehicle.unit_number}`,
+                    opened_at: new Date().toISOString()
+                })
+            }
+
+            // Refresh UI after successful deletion.
+            await fetchVehicles()
+
+            if (editingVehicleId === vehicleId) {
+                handleCancelVehicleEdit()
+            }
+
+            if (expandedVehicle === vehicleId) {
+                setExpandedVehicle(null)
+            }
+        } catch (error) {
+            console.error('Error deleting device:', error)
+            setError('Failed to delete device. Please try again.')
+        }
     }
 
-    setVehicles(prev => [...prev, newVehicle])
-    console.log(vehicles)
-    setExpandedVehicle(newVehicleId)
-}
+    const handleAddSampleVehicle = (formData) => {
+        const newVehicleId = `sample-${Date.now()}`
+
+        const newVehicle = {
+            id: newVehicleId,
+            unit_number: formData.ambulanceNumber,
+            station_name: 'Main Station',
+            created_at: new Date().toISOString(),
+            assets: [
+                {
+                    id: `box-1-${newVehicleId}`,
+                    type: 'BOX',
+                    label: formData.drugBox1Label,
+                    ble_tag: { identifier: formData.drugBox1BleId }
+                },
+                {
+                    id: `box-2-${newVehicleId}`,
+                    type: 'BOX',
+                    label: formData.drugBox2Label,
+                    ble_tag: { identifier: formData.drugBox2BleId }
+                },
+                {
+                    id: `pouch-1-${newVehicleId}`,
+                    type: 'POUCH',
+                    label: formData.narcoticsPouch1Label,
+                    parent_asset_id: `box-1-${newVehicleId}`,
+                    ble_tag: { identifier: formData.narcoticsPouch1BleId }
+                },
+                {
+                    id: `pouch-2-${newVehicleId}`,
+                    type: 'POUCH',
+                    label: formData.narcoticsPouch2Label,
+                    parent_asset_id: `box-2-${newVehicleId}`,
+                    ble_tag: { identifier: formData.narcoticsPouch2BleId }
+                }
+            ]
+        }
+
+        setVehicles((prev) => [...prev, newVehicle])
+        setExpandedVehicle(newVehicleId)
+
+        supabase
+            .from('alerts')
+            .insert({
+                asset_id: newVehicleId,
+                vehicle_id: newVehicleId,
+                status: 'OPEN',
+                reason: `Device added: ${formData.ambulanceNumber}`,
+                opened_at: new Date().toISOString()
+            })
+            .catch((error) => console.error('Error logging device add event:', error))
+    }
+
+    const handleRegisterAmbulance = async (formData) => {
+        const unitNumber = (formData.ambulanceNumber || '').trim()
+        if (!unitNumber) throw new Error('Unit number is required.')
+
+        const payload = {
+            p_unit_number: unitNumber,
+            p_station_name: 'Main Station',
+            p_box1_label: (formData.drugBox1Label || '').trim(),
+            p_box1_ble_id: (formData.drugBox1BleId || '').trim(),
+            p_box2_label: (formData.drugBox2Label || '').trim(),
+            p_box2_ble_id: (formData.drugBox2BleId || '').trim(),
+            p_pouch1_label: (formData.narcoticsPouch1Label || '').trim(),
+            p_pouch1_ble_id: (formData.narcoticsPouch1BleId || '').trim(),
+            p_pouch2_label: (formData.narcoticsPouch2Label || '').trim(),
+            p_pouch2_ble_id: (formData.narcoticsPouch2BleId || '').trim()
+        }
+
+        try {
+            const { data, error } = await supabase.rpc('register_ambulance', payload)
+            if (error) throw error
+
+            const createdVehicleId =
+                typeof data === 'object' && data?.id ? data.id : data
+
+            await supabase.from('alerts').insert({
+                asset_id: createdVehicleId,
+                vehicle_id: createdVehicleId,
+                status: 'OPEN',
+                reason: `Device added: ${payload.p_unit_number}`,
+                opened_at: new Date().toISOString()
+            })
+
+            await fetchVehicles()
+            if (createdVehicleId) setExpandedVehicle(createdVehicleId)
+        } catch (error) {
+            console.error('Error registering ambulance:', error)
+            throw error
+        }
+    }
+
     return (
         <div className="devices-page">
             <div className="page-container">
@@ -271,6 +349,7 @@ function DeviceManagement() {
                             Register and manage ambulances and BLE assets
                         </p>
                     </div>
+
                     <div className="devices-header-actions">
                         <button
                             type="button"
@@ -291,9 +370,7 @@ function DeviceManagement() {
                     ) : error ? (
                         <div className="vehicles-state vehicles-state--error">
                             <div className="vehicles-state-message">{error}</div>
-                            <Button onClick={fetchVehicles}>
-                                Retry
-                            </Button>
+                            <Button onClick={fetchVehicles}>Retry</Button>
                         </div>
                     ) : vehicles.length === 0 ? (
                         <div className="vehicles-state vehicles-state--subtle">
@@ -301,13 +378,22 @@ function DeviceManagement() {
                         </div>
                     ) : (
                         vehicles.map((vehicle) => {
-                            const isEditing = editingVehicleId === vehicle.id && expandedVehicle === vehicle.id && editingVehicleData
-                            const currentVehicle = isEditing && editingVehicleData && editingVehicleData.id === vehicle.id
-                                ? editingVehicleData
-                                : vehicle
+                            const isEditing =
+                                editingVehicleId === vehicle.id &&
+                                expandedVehicle === vehicle.id &&
+                                editingVehicleData
+
+                            const currentVehicle =
+                                isEditing &&
+                                editingVehicleData &&
+                                editingVehicleData.id === vehicle.id
+                                    ? editingVehicleData
+                                    : vehicle
+
                             const assets = currentVehicle.assets || []
-                            const drugBoxes = assets.filter(a => a.type === 'BOX') || []
-                            const pouches = assets.filter(a => a.type === 'POUCH') || []
+                            const drugBoxes = assets.filter((a) => a.type === 'BOX') || []
+                            const pouches = assets.filter((a) => a.type === 'POUCH') || []
+
                             const boxLabelById = drugBoxes.reduce((acc, box) => {
                                 acc[box.id] = box.label
                                 return acc
@@ -321,7 +407,9 @@ function DeviceManagement() {
                                     >
                                         <div className="vehicle-card-header-main">
                                             <div className="vehicle-card-title">
-                                                <span className="vehicle-card-icon" aria-hidden="true">🚑</span>
+                                                <span className="vehicle-card-icon" aria-hidden="true">
+                                                    🚑
+                                                </span>
                                                 <div className="vehicle-card-title-text">
                                                     <div className="vehicle-card-unit">
                                                         {currentVehicle.unit_number}
@@ -339,6 +427,7 @@ function DeviceManagement() {
                                                 </div>
                                             </div>
                                         </div>
+
                                         <div className="vehicle-card-header-actions">
                                             <button
                                                 type="button"
@@ -354,6 +443,7 @@ function DeviceManagement() {
                                             >
                                                 ✏️
                                             </button>
+
                                             <button
                                                 type="button"
                                                 className="icon-button icon-button-danger"
@@ -361,9 +451,11 @@ function DeviceManagement() {
                                                     e.stopPropagation()
                                                     deleteData(vehicle.id)
                                                 }}
+                                                aria-label="Delete ambulance"
                                             >
                                                 🗑
                                             </button>
+
                                             <span className="vehicle-card-toggle" aria-hidden="true">
                                                 {expandedVehicle === vehicle.id ? '▾' : '▸'}
                                             </span>
@@ -381,20 +473,31 @@ function DeviceManagement() {
                                                             {isEditing ? (
                                                                 <Input
                                                                     value={currentVehicle.unit_number || ''}
-                                                                    onChange={(e) => handleAmbulanceFieldChange('unit_number', e.target.value)}
+                                                                    onChange={(e) =>
+                                                                        handleAmbulanceFieldChange(
+                                                                            'unit_number',
+                                                                            e.target.value
+                                                                        )
+                                                                    }
                                                                 />
                                                             ) : (
                                                                 currentVehicle.unit_number
                                                             )}
                                                         </div>
                                                     </div>
+
                                                     <div className="vehicle-field">
                                                         <div className="vehicle-field-label">Station</div>
                                                         <div className="vehicle-field-value">
                                                             {isEditing ? (
                                                                 <Input
                                                                     value={currentVehicle.station_name || ''}
-                                                                    onChange={(e) => handleAmbulanceFieldChange('station_name', e.target.value)}
+                                                                    onChange={(e) =>
+                                                                        handleAmbulanceFieldChange(
+                                                                            'station_name',
+                                                                            e.target.value
+                                                                        )
+                                                                    }
                                                                 />
                                                             ) : (
                                                                 currentVehicle.station_name || '—'
@@ -411,50 +514,63 @@ function DeviceManagement() {
                                                         No drug boxes configured for this ambulance.
                                                     </div>
                                                 ) : (
-                                                    drugBoxes.map((box, index) => {
-                                                        return (
-                                                            <div key={box.id} className="vehicle-row">
-                                                                <div className="vehicle-row-main">
-                                                                    <span className="vehicle-row-prefix">
-                                                                        Box {index + 1}
+                                                    drugBoxes.map((box, index) => (
+                                                        <div key={box.id} className="vehicle-row">
+                                                            <div className="vehicle-row-main">
+                                                                <span className="vehicle-row-prefix">
+                                                                    Box {index + 1}
+                                                                </span>
+                                                                {isEditing ? (
+                                                                    <Input
+                                                                        value={box.label || ''}
+                                                                        onChange={(e) =>
+                                                                            handleAssetLabelChange(
+                                                                                box.id,
+                                                                                e.target.value
+                                                                            )
+                                                                        }
+                                                                        style={{ width: '160px' }}
+                                                                    />
+                                                                ) : (
+                                                                    <span className="vehicle-row-label">
+                                                                        {box.label}
                                                                     </span>
-                                                                    {isEditing ? (
-                                                                        <Input
-                                                                            value={box.label || ''}
-                                                                            onChange={(e) => handleAssetLabelChange(box.id, e.target.value)}
-                                                                            style={{ width: '160px' }}
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="vehicle-row-label">{box.label}</span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="vehicle-row-meta">
-                                                                    <span className="pill pill-ble">
-                                                                        {isEditing ? (
-                                                                            <span className="pill-code">
-                                                                                <Input
-                                                                                    value={box.ble_tag?.identifier || ''}
-                                                                                    onChange={(e) => handleAssetBleChange(box.id, e.target.value)}
-                                                                                    style={{ width: '190px' }}
-                                                                                />
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span
-                                                                                className="pill-code"
-                                                                            >
-                                                                                {box.ble_tag?.identifier}
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-                                                                </div>
+                                                                )}
                                                             </div>
-                                                        )
-                                                    })
+
+                                                            <div className="vehicle-row-meta">
+                                                                <span className="pill pill-ble">
+                                                                    {isEditing ? (
+                                                                        <span className="pill-code">
+                                                                            <Input
+                                                                                value={
+                                                                                    box.ble_tag?.identifier || ''
+                                                                                }
+                                                                                onChange={(e) =>
+                                                                                    handleAssetBleChange(
+                                                                                        box.id,
+                                                                                        e.target.value
+                                                                                    )
+                                                                                }
+                                                                                style={{ width: '190px' }}
+                                                                            />
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="pill-code">
+                                                                            {box.ble_tag?.identifier}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))
                                                 )}
                                             </div>
 
                                             <div className="vehicle-section">
-                                                <div className="vehicle-section-label">NARCOTICS POUCHES</div>
+                                                <div className="vehicle-section-label">
+                                                    NARCOTICS POUCHES
+                                                </div>
                                                 {pouches.length === 0 ? (
                                                     <div className="vehicle-empty-row">
                                                         No narcotics pouches configured for this ambulance.
@@ -462,7 +578,8 @@ function DeviceManagement() {
                                                 ) : (
                                                     pouches.map((pouch, index) => {
                                                         const parentLabel = pouch.parent_asset_id
-                                                            ? boxLabelById[pouch.parent_asset_id] || 'Unassigned'
+                                                            ? boxLabelById[pouch.parent_asset_id] ||
+                                                              'Unassigned'
                                                             : 'Unassigned'
 
                                                         return (
@@ -474,39 +591,62 @@ function DeviceManagement() {
                                                                     {isEditing ? (
                                                                         <Input
                                                                             value={pouch.label || ''}
-                                                                            onChange={(e) => handleAssetLabelChange(pouch.id, e.target.value)}
+                                                                            onChange={(e) =>
+                                                                                handleAssetLabelChange(
+                                                                                    pouch.id,
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
                                                                             style={{ width: '180px' }}
                                                                         />
                                                                     ) : (
-                                                                        <span className="vehicle-row-label">{pouch.label}</span>
+                                                                        <span className="vehicle-row-label">
+                                                                            {pouch.label}
+                                                                        </span>
                                                                     )}
                                                                 </div>
+
                                                                 <div className="vehicle-row-meta vehicle-row-meta--pouch">
                                                                     <span className="pill pill-ble">
                                                                         {isEditing ? (
                                                                             <span className="pill-code">
                                                                                 <Input
-                                                                                    value={pouch.ble_tag?.identifier || ''}
-                                                                                    onChange={(e) => handleAssetBleChange(pouch.id, e.target.value)}
+                                                                                    value={
+                                                                                        pouch.ble_tag?.identifier ||
+                                                                                        ''
+                                                                                    }
+                                                                                    onChange={(e) =>
+                                                                                        handleAssetBleChange(
+                                                                                            pouch.id,
+                                                                                            e.target.value
+                                                                                        )
+                                                                                    }
                                                                                     style={{ width: '190px' }}
                                                                                 />
                                                                             </span>
                                                                         ) : (
-                                                                            <span
-                                                                                className="pill-code"
-                                                                            >
+                                                                            <span className="pill-code">
                                                                                 {pouch.ble_tag?.identifier}
                                                                             </span>
                                                                         )}
                                                                     </span>
+
                                                                     {isEditing ? (
                                                                         <select
                                                                             value={pouch.parent_asset_id || ''}
-                                                                            onChange={(e) => handleAssetParentChange(pouch.id, e.target.value)}
+                                                                            onChange={(e) =>
+                                                                                handleAssetParentChange(
+                                                                                    pouch.id,
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
                                                                         >
                                                                             <option value="">Unassigned</option>
                                                                             {drugBoxes.map((box) => (
-                                                                                <option key={box.id} value={box.id}>
+                                                                                <option
+                                                                                    key={box.id}
+                                                                                    value={box.id}
+                                                                                >
                                                                                     {box.label}
                                                                                 </option>
                                                                             ))}
@@ -565,7 +705,7 @@ function DeviceManagement() {
                 <AddDeviceModal
                     show={showAddDeviceModal}
                     onClose={() => setShowAddDeviceModal(false)}
-                    onSuccess={handleAddSampleVehicle}
+                    onSuccess={handleRegisterAmbulance}
                 />
             </div>
         </div>
