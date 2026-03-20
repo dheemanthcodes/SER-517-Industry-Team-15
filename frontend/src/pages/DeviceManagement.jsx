@@ -114,10 +114,6 @@ function DeviceManagement() {
         setEditingVehicleId(null)
         setEditingVehicleData(null)
         setEditingError('')
-
-        // Log device update event
-        supabase.from('alerts').insert({
-
         await supabase.from('alerts').insert({
             asset_id: editingVehicleId,
             vehicle_id: editingVehicleId,
@@ -127,25 +123,18 @@ function DeviceManagement() {
         }).catch(error => console.error('Error logging device update event:', error))
     }
 
-    const deleteData = (vehicleId) => {
-        const vehicle = vehicles.find(v => v.id === vehicleId)
-        setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
-        if (editingVehicleId === vehicleId) {
-            setEditingVehicleId(null)
-            setEditingVehicleData(null)
-            setEditingError('')
-        }
-        if (expandedVehicle === vehicleId) {
-            setExpandedVehicle(null)
-        })
-
-        handleCancelVehicleEdit()
-    }
-
     const deleteData = async (vehicleId) => {
         const vehicle = vehicles.find(v => v.id === vehicleId)
 
         setVehicles(prev => prev.filter(v => v.id !== vehicleId))
+
+        if (editingVehicleId === vehicleId) {
+            handleCancelVehicleEdit()
+        }
+
+        if (expandedVehicle === vehicleId) {
+            setExpandedVehicle(null)
+        }
 
         if (vehicle) {
             await supabase.from('alerts').insert({
@@ -157,7 +146,6 @@ function DeviceManagement() {
             })
         }
 
-        // Log device delete event
         if (vehicle) {
             supabase.from('alerts').insert({
                 asset_id: vehicleId,
@@ -209,7 +197,6 @@ function DeviceManagement() {
         setVehicles(prev => [...prev, newVehicle])
         setExpandedVehicle(newVehicleId)
 
-        // Log device add event
         supabase.from('alerts').insert({
             asset_id: newVehicleId,
             vehicle_id: newVehicleId,
