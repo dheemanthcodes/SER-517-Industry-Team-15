@@ -5,6 +5,7 @@ import SignupPage from './pages/SignupPage'
 import LandingPage from './pages/LandingPage'
 import PublicLandingPage from './pages/PublicLandingPage'
 import DeviceManagement from './pages/DeviceManagement'
+import RaspberryPiConfig from './pages/RaspberryPiConfig'
 
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -25,6 +26,8 @@ function App() {
                 const suffix = path.slice(base.length) || '/'
                 if (suffix.startsWith('/devices')) {
                     setActivePage('devices')
+                } else if (suffix.startsWith('/raspberry')) {
+                    setActivePage('raspberry')
                 } else {
                     setActivePage('home')
                 }
@@ -137,7 +140,7 @@ function App() {
     const navigateDashboard = (page) => {
         if (!user) return
         const base = '/dashboard'
-        const path = page === 'devices' ? `${base}/devices` : `${base}/home`
+        const path = page === 'devices' ? `${base}/devices` : page === 'raspberry' ? `${base}/raspberry` : `${base}/home`
         window.history.pushState({ page }, '', path)
         setActivePage(page)
     }
@@ -191,6 +194,13 @@ function App() {
                         <span className="sidebar-item-icon">📱</span>
                         <span className="sidebar-item-text">Device Management Page</span>
                     </div>
+                    <div
+                        className={`sidebar-item ${activePage === 'raspberry' ? 'active' : ''}`}
+                        onClick={() => navigateDashboard('raspberry')}
+                    >
+                        <span className="sidebar-item-icon">🍓</span>
+                        <span className="sidebar-item-text">Raspberry Pi Configuration</span>
+                    </div>
                 </div>
             </div>
 
@@ -198,6 +208,10 @@ function App() {
             <div className="main-content">
                 {activePage === 'home' ? (
                     <LandingPage user={user} onLogout={handleLogout} />
+                ) : activePage === 'devices' ? (
+                    <DeviceManagement />
+                ) : activePage === 'raspberry' ? (
+                    <RaspberryPiConfig />
                 ) : (
                     <DeviceManagement />
                 )}
