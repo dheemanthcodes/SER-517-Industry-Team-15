@@ -18,28 +18,47 @@ function App() {
     const [bootstrapping, setBootstrapping] = useState(true)
     const hadUserRef = useRef(false)
 
+    const getPageFromPath = (path) => {
+        if (path === '/dashboard' || path === '/dashboard/' || path === '/dashboard/home') {
+            return 'home'
+        }
+
+        if (path === '/devices' || path === '/dashboard/devices') {
+            return 'devices'
+        }
+
+        if (path === '/events' || path === '/dashboard/events') {
+            return 'events'
+        }
+
+        return null
+    }
+
+    const normalizeLoggedInPath = (path) => {
+        if (path === '/dashboard/home') return '/dashboard'
+        if (path === '/dashboard/devices') return '/devices'
+        if (path === '/dashboard/events') return '/events'
+        return path
+    }
+
     const syncViewFromLocation = (currentUser) => {
         const path = window.location.pathname || '/'
 
         if (currentUser) {
-            const base = '/dashboard'
+            const normalizedPath = normalizeLoggedInPath(path)
+            if (normalizedPath !== path) {
+                window.history.replaceState({}, '', normalizedPath)
+            }
 
-            if (path.startsWith(base)) {
-                const suffix = path.slice(base.length) || '/'
+            const page = getPageFromPath(normalizedPath)
 
-                if (suffix.startsWith('/devices')) {
-                    setActivePage('devices')
-                } else if (suffix.startsWith('/events')) {
-                    setActivePage('events')
-                } else {
-                    setActivePage('home')
-                }
-
+            if (page) {
+                setActivePage(page)
                 setShowLanding(false)
                 return
             }
 
-            window.history.replaceState({}, '', `${base}/home`)
+            window.history.replaceState({}, '', '/dashboard')
             setActivePage('home')
             setShowLanding(false)
             return
@@ -131,7 +150,7 @@ function App() {
         try {
             await supabase.auth.signOut()
         } catch (err) {
-            
+            // ignore sign-out errors here
         }
 
         setUser(null)
@@ -152,13 +171,12 @@ function App() {
     const navigateDashboard = (page) => {
         if (!user) return
 
-        const base = '/dashboard'
-        let path = `${base}/home`
+        let path = '/dashboard'
 
         if (page === 'devices') {
-            path = `${base}/devices`
+            path = '/devices'
         } else if (page === 'events') {
-            path = `${base}/events`
+            path = '/events'
         }
 
         window.history.pushState({ page }, '', path)
