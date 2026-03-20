@@ -1,6 +1,6 @@
 import bluetooth
 
-target_mac = "XX:XX:XX:XX:XX:XX"  # replace with your device MAC
+target_mac = "XX:XX:XX:XX:XX:XX" 
 
 print("Scanning...")
 
