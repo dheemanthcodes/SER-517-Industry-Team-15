@@ -5,6 +5,7 @@ import SignupPage from './pages/SignupPage'
 import LandingPage from './pages/LandingPage'
 import PublicLandingPage from './pages/PublicLandingPage'
 import DeviceManagement from './pages/DeviceManagement'
+import RaspberryPiConfig from './pages/RaspberryPiConfig'
 import EventHistory from './pages/EventHistory'
 
 function App() {
@@ -30,7 +31,9 @@ function App() {
         if (path === '/events' || path === '/dashboard/events') {
             return 'events'
         }
-
+        if (path === '/raspberry' || path === '/dashboard/raspberry') {
+            return 'raspberry'
+        }
         return null
     }
 
@@ -38,6 +41,7 @@ function App() {
         if (path === '/dashboard/home') return '/dashboard'
         if (path === '/dashboard/devices') return '/devices'
         if (path === '/dashboard/events') return '/events'
+        if (path === '/dashboard/raspberry') return '/raspberry'
         return path
     }
 
@@ -266,6 +270,13 @@ function App() {
                             <span className="sidebar-item-text">Event History</span>
                         )}
                     </div>
+                    <div
+                        className={`sidebar-item ${activePage === 'raspberry' ? 'active' : ''}`}
+                        onClick={() => navigateDashboard('raspberry')}
+                    >
+                        <span className="sidebar-item-icon">🍓</span>
+                        <span className="sidebar-item-text">Raspberry Pi Configuration</span>
+                    </div>
                 </div>
 
                 {!sidebarCollapsed && (
@@ -289,6 +300,7 @@ function App() {
                 {activePage === 'home' && <LandingPage />}
                 {activePage === 'devices' && <DeviceManagement />}
                 {activePage === 'events' && <EventHistory />}
+                {activePage === 'raspberry' && <RaspberryPiConfig />}
             </main>
         </div>
     )
