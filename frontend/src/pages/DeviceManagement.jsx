@@ -150,23 +150,55 @@ function DeviceManagement() {
             }
         }
 
-        setVehicles((prev) =>
-            prev.map((v) => (v.id === vehicleIdToSave ? vehicleDataToSave : v))
-        )
-        setEditingVehicleId(null)
-        setEditingVehicleData(null)
-        setEditingError('')
-
         try {
-            await supabase.from('alerts').insert({
-                asset_id: vehicleIdToSave,
-                vehicle_id: vehicleIdToSave,
-                status: 'OPEN',
-                reason: `Device updated: ${unitNumber}`,
-                opened_at: new Date().toISOString()
-            })
+            const payload = {
+                p_vehicle_id: vehicleIdToSave,
+                p_unit_number: unitNumber,
+                p_station_name: (vehicleDataToSave.station_name || '').trim(),
+                p_assets: (vehicleDataToSave.assets || []).map((asset) => ({
+                    id: asset.id,
+                    type: asset.type,
+                    label: asset.label,
+                    ble_identifier:
+                        asset.ble_tag && typeof asset.ble_tag.identifier === 'string'
+                            ? asset.ble_tag.identifier.trim()
+                            : '',
+                    parent_asset_id: asset.type === 'POUCH' ? asset.parent_asset_id || null : null
+                }))
+            }
+
+            // Persist updates server-side via RPC because your RLS policy
+            // blocks client updates into `vehicles`/`assets`.
+            const { error: rpcError } = await supabase.rpc(
+                'update_ambulance',
+                payload
+            )
+            if (rpcError) throw rpcError
+
+            await fetchVehicles()
+            setExpandedVehicle(vehicleIdToSave)
+
+            setEditingVehicleId(null)
+            setEditingVehicleData(null)
+            setEditingError('')
+
+            // UI-level audit entry (not blocking the edit save).
+            try {
+                await supabase.from('alerts').insert({
+                    asset_id: vehicleIdToSave,
+                    vehicle_id: vehicleIdToSave,
+                    status: 'OPEN',
+                    reason: `Device updated: ${unitNumber}`,
+                    opened_at: new Date().toISOString()
+                })
+            } catch (error) {
+                console.error('Error logging device update event:', error)
+            }
         } catch (error) {
-            console.error('Error logging device update event:', error)
+            console.error('Error updating device:', error)
+            setEditingError(
+                error?.message || 'Failed to update device. Please try again.'
+            )
         }
     }
 
