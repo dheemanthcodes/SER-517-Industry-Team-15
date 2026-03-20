@@ -1,55 +1,91 @@
-import { useEffect, useState } from "react";
-import AlertPopup from "../components/AlertPopup";
-import { addAlert } from "../utils/alertStore";
+import { useCallback, useEffect, useState } from "react"
+import AlertPopup from "../components/AlertPopup"
+import {
+  fetchDashboardCounts,
+  fetchOpenAlerts,
+  fetchRecentAlerts,
+} from "../utils/alertStore"
+import { supabase } from "../supabaseClient"
+
+const initialCounts = {
+  activeAmbulances: 0,
+  trackedBoxes: 0,
+  openAlerts: 0,
+  activeDevices: 0,
+}
+
+const formatDateTime = (value) => {
+  if (!value) return "Just now"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "Just now"
+  return date.toLocaleString()
+}
 
 function LandingPage() {
-  const [alertsQueue, setAlertsQueue] = useState([]);
-  const [currentAlert, setCurrentAlert] = useState(null);
+  const [counts, setCounts] = useState(initialCounts)
+  const [openAlerts, setOpenAlerts] = useState([])
+  const [recentActivity, setRecentActivity] = useState([])
+  const [currentAlert, setCurrentAlert] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  const loadDashboardData = useCallback(async ({ showLoading = false } = {}) => {
+    try {
+      if (showLoading) setLoading(true)
+      setError("")
+
+      const [dashboardCounts, alerts, recent] = await Promise.all([
+        fetchDashboardCounts(),
+        fetchOpenAlerts(),
+        fetchRecentAlerts(4),
+      ])
+
+      setCounts(dashboardCounts)
+      setOpenAlerts(alerts)
+      setRecentActivity(recent)
+    } catch (err) {
+      console.error("Error loading dashboard data:", err)
+      setError("Failed to load live dashboard data.")
+    } finally {
+      if (showLoading) setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    const hasShownAlerts = sessionStorage.getItem("alertsShown");
+    loadDashboardData({ showLoading: true })
 
-    if (hasShownAlerts) return;
+    const channel = supabase
+      .channel("landing-alerts-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "alerts" },
+        () => {
+          loadDashboardData()
+        }
+      )
+      .subscribe()
 
-    const timer = setTimeout(() => {
-      const mockAlerts = [
-        {
-          id: 1,
-          title: "Drug box moved out of ambulance",
-          description: "Ambulance 888",
-        },
-        {
-          id: 2,
-          title: "Base station connection lost",
-          description: "Ambulance 264",
-        },
-      ];
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadDashboardData])
 
-      setAlertsQueue(mockAlerts);
-      setCurrentAlert(mockAlerts[0]);
+  useEffect(() => {
+    if (openAlerts.length === 0) {
+      setCurrentAlert(null)
+      return
+    }
 
-      sessionStorage.setItem("alertsShown", "true");
-    }, 3000);
+    setCurrentAlert((prev) => {
+      if (prev && openAlerts.some((alert) => alert.id === prev.id)) {
+        return prev
+      }
 
-    return () => clearTimeout(timer);
-  }, []);
+      return openAlerts[0]
+    })
+  }, [openAlerts])
 
-  const handleCloseAlert = () => {
-    if (!currentAlert) return;
-
-    addAlert({
-      id: Date.now() + Math.random(),
-      type: "Alert",
-      vehicle: currentAlert.description,
-      description: currentAlert.title,
-      timestamp: new Date().toLocaleString(),
-      status: "Open",
-    });
-
-    const remaining = alertsQueue.slice(1);
-    setAlertsQueue(remaining);
-    setCurrentAlert(remaining[0] || null);
-  };
+  const openAlertsToShow = openAlerts.slice(0, 3)
 
   return (
     <div className="dashboard-container">
@@ -58,25 +94,33 @@ function LandingPage() {
         <p>Overview of ambulance assets and system status</p>
       </div>
 
+      {error ? <div className="dashboard-error">{error}</div> : null}
+
       <div className="dashboard-cards">
         <div className="dashboard-card">
           <h3>Active Ambulances</h3>
-          <p className="dashboard-number">12</p>
+          <p className="dashboard-number">
+            {loading ? "..." : counts.activeAmbulances}
+          </p>
         </div>
 
         <div className="dashboard-card">
           <h3>Tracked Drug Boxes</h3>
-          <p className="dashboard-number">28</p>
+          <p className="dashboard-number">
+            {loading ? "..." : counts.trackedBoxes}
+          </p>
         </div>
 
         <div className="dashboard-card">
           <h3>Open Alerts</h3>
-          <p className="dashboard-number">3</p>
+          <p className="dashboard-number">{loading ? "..." : counts.openAlerts}</p>
         </div>
 
         <div className="dashboard-card">
           <h3>Base Stations Online</h3>
-          <p className="dashboard-number">5 / 6</p>
+          <p className="dashboard-number">
+            {loading ? "..." : counts.activeDevices}
+          </p>
         </div>
       </div>
 
@@ -102,19 +146,28 @@ function LandingPage() {
           <div className="dashboard-panel-header">
             <h2>Open Alerts</h2>
           </div>
+
           <div className="dashboard-panel-body">
-            <div className="dashboard-list-item">
-              <strong>Drug box out of range</strong>
-              <span>Ambulance 201</span>
-            </div>
-            <div className="dashboard-list-item">
-              <strong>Base station offline</strong>
-              <span>Station 3</span>
-            </div>
-            <div className="dashboard-list-item">
-              <strong>Battery low</strong>
-              <span>Beacon Tag 17</span>
-            </div>
+            {loading ? (
+              <div className="dashboard-list-item">
+                <strong>Loading live alerts...</strong>
+                <span>Fetching data from Supabase</span>
+              </div>
+            ) : openAlertsToShow.length > 0 ? (
+              openAlertsToShow.map((alert) => (
+                <div key={alert.id} className="dashboard-list-item">
+                  <strong>{alert.reason || "Open alert"}</strong>
+                  <span>
+                    {alert.vehicleLabel || alert.vehicle_id || "Unknown vehicle"}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="dashboard-list-item">
+                <strong>No open alerts</strong>
+                <span>All tracked alerts are resolved</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -122,30 +175,36 @@ function LandingPage() {
           <div className="dashboard-panel-header">
             <h2>Recent Activity</h2>
           </div>
+
           <div className="dashboard-panel-body">
-            <div className="dashboard-list-item">
-              <strong>Ambulance 102 checked in</strong>
-              <span>2 mins ago</span>
-            </div>
-            <div className="dashboard-list-item">
-              <strong>Drug box linked successfully</strong>
-              <span>8 mins ago</span>
-            </div>
-            <div className="dashboard-list-item">
-              <strong>Inventory sync completed</strong>
-              <span>15 mins ago</span>
-            </div>
-            <div className="dashboard-list-item">
-              <strong>Alert acknowledged by operator</strong>
-              <span>22 mins ago</span>
-            </div>
+            {recentActivity.length > 0 ? (
+              recentActivity.map((activity) => (
+                <div key={activity.id} className="dashboard-list-item">
+                  <strong>{activity.reason || "Alert activity"}</strong>
+                  <span>
+                    {activity.vehicleLabel || activity.vehicle_id || "Unknown vehicle"}
+                    {" • "}
+                    {formatDateTime(activity.opened_at)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="dashboard-list-item">
+                <strong>No recent activity</strong>
+                <span>Live updates will appear here</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <AlertPopup alert={currentAlert} onClose={handleCloseAlert} />
+      <AlertPopup
+        alert={currentAlert}
+        onClose={() => setCurrentAlert(null)}
+        onUpdated={loadDashboardData}
+      />
     </div>
-  );
+  )
 }
 
-export default LandingPage;
+export default LandingPage
