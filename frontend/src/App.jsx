@@ -31,7 +31,9 @@ function App() {
         if (path === '/events' || path === '/dashboard/events') {
             return 'events'
         }
-
+        if (path === '/raspberry' || path === '/dashboard/raspberry') {
+            return 'raspberry'
+        }
         return null
     }
 
@@ -39,6 +41,7 @@ function App() {
         if (path === '/dashboard/home') return '/dashboard'
         if (path === '/dashboard/devices') return '/devices'
         if (path === '/dashboard/events') return '/events'
+        if (path === '/dashboard/raspberry') return '/raspberry'
         return path
     }
 
@@ -297,6 +300,7 @@ function App() {
                 {activePage === 'home' && <LandingPage />}
                 {activePage === 'devices' && <DeviceManagement />}
                 {activePage === 'events' && <EventHistory />}
+                {activePage === 'raspberry' && <RaspberryPiConfig />}
             </main>
         </div>
     )
