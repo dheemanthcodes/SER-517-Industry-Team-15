@@ -1,51 +1,119 @@
-import { supabase } from '../supabaseClient'
+import { supabase } from "../supabaseClient"
 
-const STORAGE_KEY = "sessionAlerts";
+const ALERT_SELECT = `
+  id,
+  asset_id,
+  vehicle_id,
+  status,
+  reason,
+  opened_at,
+  acknowledged_at,
+  closed_at,
+  vehicles ( unit_number )
+`
 
-export const addAlert = (alert) => {
-  let existing = [];
+const normalizeAlert = (row) => ({
+  ...row,
+  vehicleLabel: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown vehicle",
+  title: row?.reason ?? "Alert",
+  description: row?.reason ?? "",
+})
 
-  const stored = sessionStorage.getItem(STORAGE_KEY);
+const fetchCount = async (table, buildQuery = (query) => query) => {
+  let query = supabase.from(table).select("id", { count: "exact", head: true })
+  query = buildQuery(query)
 
-  if (stored) {
-    try {
-      existing = JSON.parse(stored);
-      if (!Array.isArray(existing)) existing = [];
-    } catch {
-      existing = [];
-    }
+  const { count, error } = await query
+  if (error) throw error
+
+  return count ?? 0
+}
+
+export const fetchOpenAlerts = async () => {
+  const { data, error } = await supabase
+    .from("alerts")
+    .select(ALERT_SELECT)
+    .eq("status", "OPEN")
+    .order("opened_at", { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map(normalizeAlert)
+}
+
+export const fetchRecentAlerts = async (limit = 4) => {
+  const { data, error } = await supabase
+    .from("alerts")
+    .select(ALERT_SELECT)
+    .order("opened_at", { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+
+  return (data ?? []).map(normalizeAlert)
+}
+
+export const fetchDashboardCounts = async () => {
+  const [activeAmbulances, trackedBoxes, openAlerts, activeDevices] =
+    await Promise.all([
+      fetchCount("vehicles"),
+      fetchCount("assets", (query) => query.eq("type", "BOX")),
+      fetchCount("alerts", (query) => query.eq("status", "OPEN")),
+      fetchCount("devices", (query) => query.eq("is_active", true)),
+    ])
+
+  return {
+    activeAmbulances,
+    trackedBoxes,
+    openAlerts,
+    activeDevices,
+  }
+}
+
+export const updateAlertStatus = async (id, status) => {
+  const now = new Date().toISOString()
+  const update = { status }
+
+  if (status === "ACK") {
+    update.acknowledged_at = now
   }
 
-  const exists = existing.some(
-    (a) =>
-      a.vehicle === alert.vehicle &&
-      a.description === alert.description
-  );
-
-  if (!exists) {
-    const updated = [alert, ...existing];
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-
-    // Insert to database
-    supabase.from('alerts').insert({
-      asset_id: alert.vehicle,
-      vehicle_id: null,
-      status: 'OPEN',
-      reason: alert.description,
-      opened_at: new Date(alert.timestamp).toISOString()
-    }).catch(error => console.error('Error inserting alert to database:', error));
+  if (status === "CLOSED") {
+    update.closed_at = now
   }
-};
 
-export const getAlerts = () => {
-  const stored = sessionStorage.getItem(STORAGE_KEY);
+  const { data, error } = await supabase
+    .from("alerts")
+    .update(update)
+    .eq("id", id)
+    .select(ALERT_SELECT)
+    .maybeSingle()
 
-  if (!stored) return [];
+  if (error) throw error
 
-  try {
-    const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  return data ? normalizeAlert(data) : null
+}
+
+export const createAlert = async (alert) => {
+  const payload = {
+    asset_id: alert?.asset_id ?? null,
+    vehicle_id: alert?.vehicle_id ?? null,
+    status: "OPEN",
+    reason: alert?.reason ?? alert?.description ?? null,
+    opened_at: alert?.opened_at ?? new Date().toISOString(),
   }
-};
+
+  const { data, error } = await supabase
+    .from("alerts")
+    .insert(payload)
+    .select(ALERT_SELECT)
+    .maybeSingle()
+
+  if (error) throw error
+
+  return data ? normalizeAlert(data) : null
+}
+
+export const addAlert = async (alert) => createAlert(alert)
+
+export const getAlerts = async () => fetchOpenAlerts()
