@@ -172,28 +172,40 @@ function DeviceManagement() {
 
     const deleteData = async (vehicleId) => {
         const vehicle = vehicles.find((v) => v.id === vehicleId)
-        setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
-
-        if (editingVehicleId === vehicleId) {
-            handleCancelVehicleEdit()
-        }
-
-        if (expandedVehicle === vehicleId) {
-            setExpandedVehicle(null)
-        }
-
-        if (!vehicle) return
+        setError(null)
 
         try {
-            await supabase.from('alerts').insert({
-                asset_id: vehicleId,
-                vehicle_id: vehicleId,
-                status: 'OPEN',
-                reason: `Device deleted: ${vehicle.unit_number}`,
-                opened_at: new Date().toISOString()
+            // Delete from Supabase via RPC because direct client writes to
+            // `vehicles`/`assets` are restricted by your RLS policy.
+            const { error: rpcError } = await supabase.rpc('delete_ambulance', {
+                p_vehicle_id: vehicleId
             })
+            if (rpcError) throw rpcError
+
+            if (vehicle) {
+                // Log a UI-level audit entry (separate from telemetry history).
+                await supabase.from('alerts').insert({
+                    asset_id: vehicleId,
+                    vehicle_id: vehicleId,
+                    status: 'OPEN',
+                    reason: `Device deleted: ${vehicle.unit_number}`,
+                    opened_at: new Date().toISOString()
+                })
+            }
+
+            // Refresh UI after successful deletion.
+            await fetchVehicles()
+
+            if (editingVehicleId === vehicleId) {
+                handleCancelVehicleEdit()
+            }
+
+            if (expandedVehicle === vehicleId) {
+                setExpandedVehicle(null)
+            }
         } catch (error) {
-            console.error('Error logging device delete event:', error)
+            console.error('Error deleting device:', error)
+            setError('Failed to delete device. Please try again.')
         }
     }
 
