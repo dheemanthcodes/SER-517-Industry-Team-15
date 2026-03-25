@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from alert_logic import clear_alert, clear_state_alerts, set_alert, update_low_battery_alert
 from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remove_device, scan_devices
 
 app = FastAPI(
@@ -111,78 +112,6 @@ def _extract_location(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
         return {"lat": float(lat), "lng": float(lng)}
 
     return None
-
-
-def _ensure_alert_bucket(asset_id: str) -> Dict[str, Dict[str, Any]]:
-    return alert_state_map.setdefault(asset_id, {})
-
-
-def _set_alert(asset_id: str, alert_type: str, severity: str, message: str) -> None:
-    alert_bucket = _ensure_alert_bucket(asset_id)
-    existing_alert = alert_bucket.get(alert_type)
-    now = _utc_now()
-
-    if (
-        existing_alert
-        and existing_alert.get("is_active")
-        and existing_alert.get("severity") == severity
-        and existing_alert.get("message") == message
-    ):
-        return
-
-    alert_bucket[alert_type] = {
-        "alert_type": alert_type,
-        "severity": severity,
-        "message": message,
-        "is_active": True,
-        "opened_at": existing_alert.get("opened_at", now.isoformat()) if existing_alert else now.isoformat(),
-        "last_updated_at": now.isoformat(),
-    }
-
-
-def _clear_alert(asset_id: str, alert_type: str) -> None:
-    alert_bucket = alert_state_map.get(asset_id)
-    if not alert_bucket:
-        return
-
-    existing_alert = alert_bucket.get(alert_type)
-    if not existing_alert or not existing_alert.get("is_active"):
-        return
-
-    existing_alert["is_active"] = False
-    existing_alert["resolved_at"] = _utc_now().isoformat()
-
-
-def _clear_state_alerts(asset_id: str) -> None:
-    _clear_alert(asset_id, ALERT_TYPE_MISSING)
-    _clear_alert(asset_id, ALERT_TYPE_OVERDUE)
-
-
-def _update_low_battery_alert(asset_id: str, battery_level: Optional[float]) -> None:
-    if not isinstance(battery_level, (int, float)):
-        _clear_alert(asset_id, ALERT_TYPE_LOW_BATTERY)
-        return
-
-    battery_value = float(battery_level)
-    if battery_value < 10:
-        _set_alert(
-            asset_id,
-            ALERT_TYPE_LOW_BATTERY,
-            "critical",
-            f"Battery critically low at {battery_value:.1f}%",
-        )
-        return
-
-    if battery_value < 20:
-        _set_alert(
-            asset_id,
-            ALERT_TYPE_LOW_BATTERY,
-            "warning",
-            f"Battery low at {battery_value:.1f}%",
-        )
-        return
-
-    _clear_alert(asset_id, ALERT_TYPE_LOW_BATTERY)
 
 
 def _set_asset_state(asset_id: str, asset_record: Dict[str, Any], next_state: str) -> None:
@@ -291,11 +220,11 @@ def evaluate_asset_states() -> None:
 
         if not _device_is_alive(device_id):
             _set_asset_state(asset_id, asset_record, ASSET_STATE_UNKNOWN)
-            _clear_state_alerts(asset_id)
-            _set_alert(asset_id, ALERT_TYPE_DEVICE_OFFLINE, "high", "Device heartbeat is offline")
+            clear_state_alerts(alert_state_map, asset_id, ALERT_TYPE_MISSING, ALERT_TYPE_OVERDUE, _utc_now)
+            set_alert(alert_state_map, asset_id, ALERT_TYPE_DEVICE_OFFLINE, "high", "Device heartbeat is offline", _utc_now)
             continue
 
-        _clear_alert(asset_id, ALERT_TYPE_DEVICE_OFFLINE)
+        clear_alert(alert_state_map, asset_id, ALERT_TYPE_DEVICE_OFFLINE, _utc_now)
 
         last_seen_at = asset_record.get("last_seen_at")
         if not isinstance(last_seen_at, datetime):
@@ -325,13 +254,13 @@ def evaluate_asset_states() -> None:
         state_changed = previous_state != next_state
 
         if next_state == ASSET_STATE_IN_VEHICLE:
-            _clear_state_alerts(asset_id)
+            clear_state_alerts(alert_state_map, asset_id, ALERT_TYPE_MISSING, ALERT_TYPE_OVERDUE, _utc_now)
         elif state_changed and next_state == ASSET_STATE_OVERDUE:
-            _set_alert(asset_id, ALERT_TYPE_OVERDUE, "low", "Asset overdue while stationary")
+            set_alert(alert_state_map, asset_id, ALERT_TYPE_OVERDUE, "low", "Asset overdue while stationary", _utc_now)
         elif state_changed and next_state == ASSET_STATE_MISSING_CONFIRMED:
-            _set_alert(asset_id, ALERT_TYPE_MISSING, "high", "Asset missing while vehicle is moving")
+            set_alert(alert_state_map, asset_id, ALERT_TYPE_MISSING, "high", "Asset missing while vehicle is moving", _utc_now)
 
-        _update_low_battery_alert(asset_id, asset_record.get("battery_level"))
+        update_low_battery_alert(alert_state_map, asset_id, asset_record.get("battery_level"), ALERT_TYPE_LOW_BATTERY, _utc_now)
 
 
 async def evaluate_asset_states_loop() -> None:
