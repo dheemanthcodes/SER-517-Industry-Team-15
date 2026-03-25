@@ -181,6 +181,8 @@ function App() {
             path = '/devices'
         } else if (page === 'events') {
             path = '/events'
+        } else if (page === 'raspberry') {
+            path = '/raspberry'
         }
 
         window.history.pushState({ page }, '', path)
