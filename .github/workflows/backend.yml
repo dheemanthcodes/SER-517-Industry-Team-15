@@ -2,34 +2,34 @@ name: Backend CI
 
 on:
   push:
-    paths:
-      - 'backend/**'
+    branches:
+      - main
   pull_request:
-    paths:
-      - 'backend/**'
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: backend
-
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
+        working-directory: backend
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run backend (startup test)
+      - name: Run backend
+        working-directory: backend
         run: |
-          timeout 10s uvicorn main:app --host 127.0.0.1 --port 8000
+          uvicorn main:app --host 127.0.0.1 --port 8000 &
+          sleep 5
+          curl -f http://127.0.0.1:8000
