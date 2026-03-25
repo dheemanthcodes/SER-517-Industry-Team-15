@@ -127,8 +127,4 @@ def api_remove_device(payload: dict):
         result = remove_device(mac)
         return {"status": "success", "result": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+        print(f"[ERROR] {device_id}: {e}")
