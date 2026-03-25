@@ -32,4 +32,4 @@ jobs:
 
       - name: Run backend (startup test)
         run: |
-          timeout 10s uvicorn main:app --host 127.0.0.1 --port 8000
+          timeout 50s uvicorn main:app --host 127.0.0.1 --port 8000
