@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import './RaspberryPiConfig.css'
 
 function RaspberryPiConfig() {
-    // ---- Pi Management State ----
     const [pis, setPis] = useState(() => {
         const saved = localStorage.getItem('configuredPis')
         if (saved) {
@@ -14,7 +13,6 @@ function RaspberryPiConfig() {
     const [newPiName, setNewPiName] = useState('')
     const [newPiIp, setNewPiIp] = useState('')
 
-    // ---- Bluetooth State for Selected Pi ----
     const [scanned, setScanned] = useState([])
     const [paired, setPaired] = useState([])
     const [scanning, setScanning] = useState(false)
