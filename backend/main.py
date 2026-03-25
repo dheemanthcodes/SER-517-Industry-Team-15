@@ -1,4 +1,6 @@
-from datetime import datetime, timezone
+import asyncio
+from contextlib import suppress
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -28,6 +30,338 @@ ALLOWED_DEVICES = {
     "pi-001": "6gOIpiSJ_zlS_hskU8zkIDL0kvQta5zKzsERk98uKj0",
 }
 
+# NEW CODE START
+HEARTBEAT_STALE_AFTER = timedelta(seconds=30)
+ASSET_IN_VEHICLE_THRESHOLD = timedelta(seconds=10)
+ASSET_DISCONNECTED_THRESHOLD = timedelta(seconds=30)
+ASSET_IN_USE_OVERDUE_AFTER = timedelta(minutes=20)
+ASSET_MISSING_CONFIRMED_AFTER = timedelta(seconds=60)
+ASSET_EVALUATION_INTERVAL_SECONDS = 10
+
+ASSET_STATE_UNKNOWN = "UNKNOWN"
+ASSET_STATE_IN_VEHICLE = "IN_VEHICLE"
+ASSET_STATE_DISCONNECTED_PENDING = "DISCONNECTED_PENDING"
+ASSET_STATE_IN_USE = "IN_USE"
+ASSET_STATE_OVERDUE = "OVERDUE"
+ASSET_STATE_MISSING_CONFIRMED = "MISSING_CONFIRMED"
+
+ALERT_TYPE_MISSING = "MISSING"
+ALERT_TYPE_OVERDUE = "OVERDUE"
+ALERT_TYPE_LOW_BATTERY = "LOW_BATTERY"
+ALERT_TYPE_DEVICE_OFFLINE = "DEVICE_OFFLINE"
+
+# FIX START
+if "pi_health_state" not in globals():
+    pi_health_state: Dict[str, Dict[str, Any]] = {}
+# FIX END
+asset_state_map: Dict[str, Dict[str, Any]] = {}
+alert_state_map: Dict[str, Dict[str, Dict[str, Any]]] = {}
+asset_evaluator_task: Optional[asyncio.Task] = None
+pi_health_monitor_task: Optional[asyncio.Task] = None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    normalized_value = value.strip()
+    if normalized_value.endswith("Z"):
+        normalized_value = normalized_value[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(normalized_value)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
+
+def _get_snapshot_timestamp(payload: Dict[str, Any]) -> datetime:
+    return _parse_iso_datetime(payload.get("timestamp")) or _utc_now()
+
+
+def _normalize_movement_state(payload: Dict[str, Any]) -> str:
+    movement = payload.get("movement")
+    if not isinstance(movement, dict):
+        return "UNKNOWN"
+
+    state = movement.get("state")
+    if not isinstance(state, str):
+        return "UNKNOWN"
+
+    normalized_state = state.strip().upper()
+    return normalized_state if normalized_state in {"MOVING", "STATIONARY"} else "UNKNOWN"
+
+
+def _extract_location(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    location = payload.get("location")
+    if not isinstance(location, dict):
+        return None
+
+    lat = location.get("lat")
+    lng = location.get("lng")
+    if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+        return {"lat": float(lat), "lng": float(lng)}
+
+    return None
+
+
+def _ensure_alert_bucket(asset_id: str) -> Dict[str, Dict[str, Any]]:
+    return alert_state_map.setdefault(asset_id, {})
+
+
+def _set_alert(asset_id: str, alert_type: str, severity: str, message: str) -> None:
+    alert_bucket = _ensure_alert_bucket(asset_id)
+    existing_alert = alert_bucket.get(alert_type)
+    now = _utc_now()
+
+    if (
+        existing_alert
+        and existing_alert.get("is_active")
+        and existing_alert.get("severity") == severity
+        and existing_alert.get("message") == message
+    ):
+        return
+
+    alert_bucket[alert_type] = {
+        "alert_type": alert_type,
+        "severity": severity,
+        "message": message,
+        "is_active": True,
+        "opened_at": existing_alert.get("opened_at", now.isoformat()) if existing_alert else now.isoformat(),
+        "last_updated_at": now.isoformat(),
+    }
+
+
+def _clear_alert(asset_id: str, alert_type: str) -> None:
+    alert_bucket = alert_state_map.get(asset_id)
+    if not alert_bucket:
+        return
+
+    existing_alert = alert_bucket.get(alert_type)
+    if not existing_alert or not existing_alert.get("is_active"):
+        return
+
+    existing_alert["is_active"] = False
+    existing_alert["resolved_at"] = _utc_now().isoformat()
+
+
+def _clear_state_alerts(asset_id: str) -> None:
+    _clear_alert(asset_id, ALERT_TYPE_MISSING)
+    _clear_alert(asset_id, ALERT_TYPE_OVERDUE)
+
+
+def _update_low_battery_alert(asset_id: str, battery_level: Optional[float]) -> None:
+    if not isinstance(battery_level, (int, float)):
+        _clear_alert(asset_id, ALERT_TYPE_LOW_BATTERY)
+        return
+
+    battery_value = float(battery_level)
+    if battery_value < 10:
+        _set_alert(
+            asset_id,
+            ALERT_TYPE_LOW_BATTERY,
+            "critical",
+            f"Battery critically low at {battery_value:.1f}%",
+        )
+        return
+
+    if battery_value < 20:
+        _set_alert(
+            asset_id,
+            ALERT_TYPE_LOW_BATTERY,
+            "warning",
+            f"Battery low at {battery_value:.1f}%",
+        )
+        return
+
+    _clear_alert(asset_id, ALERT_TYPE_LOW_BATTERY)
+
+
+def _set_asset_state(asset_id: str, asset_record: Dict[str, Any], next_state: str) -> None:
+    previous_state = asset_record.get("current_state")
+    if previous_state == next_state:
+        return
+
+    asset_record["previous_state"] = previous_state
+    asset_record["current_state"] = next_state
+    asset_record["state_changed_at"] = _utc_now().isoformat()
+
+
+def _device_is_alive(device_id: Optional[str]) -> bool:
+    if not device_id:
+        return False
+
+    device_health = pi_health_state.get(device_id)
+    if not isinstance(device_health, dict):
+        return False
+
+    return bool(device_health.get("is_alive"))
+
+
+# FIX START
+if "mark_pi_alive" not in globals():
+    async def mark_pi_alive(device_id: Optional[str]) -> None:
+        if not device_id:
+            return
+
+        pi_health_state[device_id] = {
+            "last_seen_at": _utc_now(),
+            "is_alive": True,
+        }
+
+
+if "monitor_pi_health" not in globals():
+    async def monitor_pi_health() -> None:
+        while True:
+            now = _utc_now()
+            for device_id, device_health in list(pi_health_state.items()):
+                last_seen_at = device_health.get("last_seen_at")
+                if not isinstance(last_seen_at, datetime):
+                    continue
+
+                pi_health_state[device_id]["is_alive"] = (now - last_seen_at) <= HEARTBEAT_STALE_AFTER
+
+            await asyncio.sleep(ASSET_EVALUATION_INTERVAL_SECONDS)
+# FIX END
+
+
+def process_payload(payload: Dict[str, Any]) -> None:
+    if not isinstance(payload, dict):
+        return
+
+    if payload.get("type") == "snapshot":
+        handle_snapshot(payload)
+
+
+def handle_snapshot(payload: Dict[str, Any]) -> None:
+    device_id = payload.get("device_id")
+    if not isinstance(device_id, str) or not device_id.strip():
+        return
+
+    snapshot_timestamp = _get_snapshot_timestamp(payload)
+    movement_state = _normalize_movement_state(payload)
+    location = _extract_location(payload)
+    assets = payload.get("assets")
+
+    if not isinstance(assets, list):
+        return
+
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+
+        asset_id = asset.get("asset_id")
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            continue
+
+        asset_last_seen_at = _parse_iso_datetime(asset.get("last_seen_at")) or snapshot_timestamp
+        existing_asset = asset_state_map.get(asset_id)
+        existing_last_seen_at = existing_asset.get("last_seen_at") if existing_asset else None
+
+        if isinstance(existing_last_seen_at, datetime) and asset_last_seen_at < existing_last_seen_at:
+            continue
+
+        asset_state_map[asset_id] = {
+            "asset_id": asset_id,
+            "last_seen_at": asset_last_seen_at,
+            "current_state": existing_asset.get("current_state", ASSET_STATE_UNKNOWN) if existing_asset else ASSET_STATE_UNKNOWN,
+            "previous_state": existing_asset.get("previous_state") if existing_asset else None,
+            "device_id": device_id,
+            "movement_state": movement_state,
+            "location": location,
+            "battery_level": asset.get("battery_level"),
+            "vehicle_id": payload.get("vehicle_id"),
+            "state_changed_at": existing_asset.get("state_changed_at") if existing_asset else None,
+        }
+
+
+def evaluate_asset_states() -> None:
+    now = _utc_now()
+
+    for asset_id, asset_record in asset_state_map.items():
+        device_id = asset_record.get("device_id")
+
+        if not _device_is_alive(device_id):
+            _set_asset_state(asset_id, asset_record, ASSET_STATE_UNKNOWN)
+            _clear_state_alerts(asset_id)
+            _set_alert(asset_id, ALERT_TYPE_DEVICE_OFFLINE, "high", "Device heartbeat is offline")
+            continue
+
+        _clear_alert(asset_id, ALERT_TYPE_DEVICE_OFFLINE)
+
+        last_seen_at = asset_record.get("last_seen_at")
+        if not isinstance(last_seen_at, datetime):
+            _set_asset_state(asset_id, asset_record, ASSET_STATE_UNKNOWN)
+            continue
+
+        time_since_last_seen = now - last_seen_at
+        movement_state = asset_record.get("movement_state")
+
+        if time_since_last_seen < ASSET_IN_VEHICLE_THRESHOLD:
+            next_state = ASSET_STATE_IN_VEHICLE
+        elif time_since_last_seen <= ASSET_DISCONNECTED_THRESHOLD:
+            next_state = ASSET_STATE_DISCONNECTED_PENDING
+        elif movement_state == "UNKNOWN":
+            next_state = ASSET_STATE_DISCONNECTED_PENDING
+        elif movement_state == "STATIONARY":
+            next_state = ASSET_STATE_IN_USE
+            if time_since_last_seen > ASSET_IN_USE_OVERDUE_AFTER:
+                next_state = ASSET_STATE_OVERDUE
+        elif movement_state == "MOVING" and time_since_last_seen > ASSET_MISSING_CONFIRMED_AFTER:
+            next_state = ASSET_STATE_MISSING_CONFIRMED
+        else:
+            next_state = ASSET_STATE_DISCONNECTED_PENDING
+
+        previous_state = asset_record.get("current_state")
+        _set_asset_state(asset_id, asset_record, next_state)
+        state_changed = previous_state != next_state
+
+        if next_state == ASSET_STATE_IN_VEHICLE:
+            _clear_state_alerts(asset_id)
+        elif state_changed and next_state == ASSET_STATE_OVERDUE:
+            _set_alert(asset_id, ALERT_TYPE_OVERDUE, "low", "Asset overdue while stationary")
+        elif state_changed and next_state == ASSET_STATE_MISSING_CONFIRMED:
+            _set_alert(asset_id, ALERT_TYPE_MISSING, "high", "Asset missing while vehicle is moving")
+
+        _update_low_battery_alert(asset_id, asset_record.get("battery_level"))
+
+
+async def evaluate_asset_states_loop() -> None:
+    while True:
+        evaluate_asset_states()
+        await asyncio.sleep(ASSET_EVALUATION_INTERVAL_SECONDS)
+
+
+@app.on_event("startup")
+async def startup_asset_logic() -> None:
+    global asset_evaluator_task, pi_health_monitor_task
+
+    # FIX START
+    if asset_evaluator_task is None or asset_evaluator_task.done():
+        asset_evaluator_task = asyncio.create_task(evaluate_asset_states_loop())
+    # FIX END
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    for task in (pi_health_monitor_task, asset_evaluator_task):
+        if task is None:
+            continue
+
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+# NEW CODE END
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -48,7 +382,7 @@ def read_root():
     summary="Receive Raspberry Pi JSON data",
     description="Accepts any non-empty JSON object sent by a Raspberry Pi and stores the latest payload in memory.",
 )
-def receive_pi_data(
+async def receive_pi_data(
     payload: Dict[str, Any] = Body(
         ...,
         example={
@@ -68,6 +402,13 @@ def receive_pi_data(
         "payload": payload,
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
+    # NEW CODE START
+    device_id = payload.get("device_id")
+    # FIX START
+    await mark_pi_alive(device_id)
+    # FIX END
+    process_payload(payload)
+    # NEW CODE END
     return {
         "status": "success",
         "message": "Raspberry Pi data received successfully",
@@ -124,6 +465,11 @@ async def websocket_device(websocket: WebSocket):
         while True:
             message = await websocket.receive_json()
             print(f"[MESSAGE] {device_id}: {message}")
+
+            # NEW CODE START
+            await mark_pi_alive(device_id)
+            process_payload(message)
+            # NEW CODE END
 
             if message.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
