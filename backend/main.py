@@ -187,6 +187,137 @@ def api_remove_device(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+MOCK_VEHICLES = [
+    {"id": "veh-001", "unit_number": "AMB-001", "station_name": "Station Alpha"},
+    {"id": "veh-002", "unit_number": "AMB-002", "station_name": "Station Bravo"},
+]
+
+MOCK_DEVICES = [
+    {"id": "pi-1", "vehicle_id": "veh-001", "device_name": "Pi AMB-001", "ip_address": "192.168.1.101", "is_active": True},
+    {"id": "pi-2", "vehicle_id": "veh-002", "device_name": "Pi AMB-002", "ip_address": "192.168.1.102", "is_active": True},
+]
+
+MOCK_ASSETS = [
+    {"id": "ast-001", "vehicle_id": "veh-001", "type": "BOX",   "label": "Drug Box A", "parent_asset_id": None},
+    {"id": "ast-002", "vehicle_id": "veh-001", "type": "POUCH", "label": "Device A",   "parent_asset_id": "ast-001"},
+    {"id": "ast-003", "vehicle_id": "veh-001", "type": "POUCH", "label": "Device B",   "parent_asset_id": "ast-001"},
+    {"id": "ast-004", "vehicle_id": "veh-001", "type": "POUCH", "label": "Device C",   "parent_asset_id": "ast-001"},
+    {"id": "ast-005", "vehicle_id": "veh-001", "type": "POUCH", "label": "Device D",   "parent_asset_id": "ast-001"},
+    {"id": "ast-006", "vehicle_id": "veh-002", "type": "BOX",   "label": "Drug Box B", "parent_asset_id": None},
+    {"id": "ast-007", "vehicle_id": "veh-002", "type": "POUCH", "label": "Device E",   "parent_asset_id": "ast-006"},
+    {"id": "ast-008", "vehicle_id": "veh-002", "type": "POUCH", "label": "Device F",   "parent_asset_id": "ast-006"},
+    {"id": "ast-009", "vehicle_id": "veh-002", "type": "POUCH", "label": "Device G",   "parent_asset_id": "ast-006"},
+    {"id": "ast-010", "vehicle_id": "veh-002", "type": "POUCH", "label": "Device H",   "parent_asset_id": "ast-006"},
+]
+
+MOCK_BLE_TAGS = [
+    {"asset_id": "ast-002", "identifier": "AA:BB:CC:DD:EE:01", "tag_model": "Minew E8"},
+    {"asset_id": "ast-003", "identifier": "AA:BB:CC:DD:EE:02", "tag_model": "Minew E8"},
+    {"asset_id": "ast-004", "identifier": "AA:BB:CC:DD:EE:03", "tag_model": "Minew E8"},
+    {"asset_id": "ast-005", "identifier": "AA:BB:CC:DD:EE:04", "tag_model": "Minew E8"},
+    {"asset_id": "ast-007", "identifier": "AA:BB:CC:DD:EE:05", "tag_model": "Minew E8"},
+    {"asset_id": "ast-008", "identifier": "AA:BB:CC:DD:EE:06", "tag_model": "Minew E8"},
+    {"asset_id": "ast-009", "identifier": "AA:BB:CC:DD:EE:07", "tag_model": "Minew E8"},
+    {"asset_id": "ast-010", "identifier": "AA:BB:CC:DD:EE:08", "tag_model": "Minew E8"},
+]
+
+MOCK_ASSET_STATUS = [
+    {"asset_id": "ast-002", "state": "IN_VEHICLE", "last_seen_at": "2025-03-25T10:00:00Z", "last_rssi": -65},
+    {"asset_id": "ast-003", "state": "IN_USE",     "last_seen_at": "2025-03-25T09:55:00Z", "last_rssi": -72},
+    {"asset_id": "ast-004", "state": "MISSING",    "last_seen_at": "2025-03-25T09:30:00Z", "last_rssi": -90},
+    {"asset_id": "ast-005", "state": "IN_VEHICLE", "last_seen_at": "2025-03-25T10:01:00Z", "last_rssi": -60},
+    {"asset_id": "ast-007", "state": "IN_VEHICLE", "last_seen_at": "2025-03-25T10:02:00Z", "last_rssi": -58},
+    {"asset_id": "ast-008", "state": "IN_VEHICLE", "last_seen_at": "2025-03-25T10:02:00Z", "last_rssi": -61},
+    {"asset_id": "ast-009", "state": "MISSING",    "last_seen_at": "2025-03-25T09:45:00Z", "last_rssi": -88},
+    {"asset_id": "ast-010", "state": "IN_USE",     "last_seen_at": "2025-03-25T09:50:00Z", "last_rssi": -70},
+]
+
+MOCK_ALERTS = [
+    {"id": "alr-001", "asset_id": "ast-004", "vehicle_id": "veh-001", "status": "OPEN", "reason": "Asset not detected for > 300s", "opened_at": "2025-03-25T09:35:00Z", "acknowledged_at": None, "closed_at": None},
+    {"id": "alr-002", "asset_id": "ast-009", "vehicle_id": "veh-002", "status": "ACK",  "reason": "Asset not detected for > 300s", "opened_at": "2025-03-25T09:48:00Z", "acknowledged_at": "2025-03-25T09:52:00Z", "closed_at": None},
+]
+
+
+def build_snapshot():
+    tag_by_asset    = {t["asset_id"]: t for t in MOCK_BLE_TAGS}
+    status_by_asset = {s["asset_id"]: s for s in MOCK_ASSET_STATUS}
+    device_by_veh   = {d["vehicle_id"]: d for d in MOCK_DEVICES}
+    alerts_by_veh   = {}
+    for a in MOCK_ALERTS:
+        alerts_by_veh.setdefault(a["vehicle_id"], []).append(a)
+
+    vehicles_out = []
+    for veh in MOCK_VEHICLES:
+        vid = veh["id"]
+        pi  = device_by_veh.get(vid)
+        assets_out = []
+        for ast in MOCK_ASSETS:
+            if ast["vehicle_id"] != vid:
+                continue
+            tag    = tag_by_asset.get(ast["id"])
+            status = status_by_asset.get(ast["id"])
+            assets_out.append({
+                "id":              ast["id"],
+                "type":            ast["type"],
+                "label":           ast["label"],
+                "parent_asset_id": ast["parent_asset_id"],
+                "ble_tag":  {"identifier": tag["identifier"], "tag_model": tag["tag_model"]} if tag else None,
+                "status":   {"state": status["state"], "last_seen_at": status["last_seen_at"], "last_rssi": status["last_rssi"]} if status else None,
+            })
+        vehicles_out.append({
+            "id":           veh["id"],
+            "unit_number":  veh["unit_number"],
+            "station_name": veh["station_name"],
+            "pi_device": {"id": pi["id"], "device_name": pi["device_name"], "ip_address": pi["ip_address"], "is_active": pi["is_active"]} if pi else None,
+            "assets": assets_out,
+            "alerts": alerts_by_veh.get(vid, []),
+        })
+
+    return {
+        "type":         "snapshot",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "vehicles":     vehicles_out,
+    }
+
+
+class DashboardManager:
+    def __init__(self):
+        self._clients: Set[WebSocket] = set()
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self._clients.add(ws)
+
+    def disconnect(self, ws: WebSocket):
+        self._clients.discard(ws)
+
+
+dashboard_manager = DashboardManager()
+
+
+@app.websocket("/ws/dashboard")
+async def ws_dashboard(websocket: WebSocket):
+    await dashboard_manager.connect(websocket)
+    try:
+        await websocket.send_json(build_snapshot())
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "detail": "Invalid JSON"})
+                continue
+            if msg.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+            elif msg.get("type") == "refresh":
+                await websocket.send_json(build_snapshot())
+    except WebSocketDisconnect:
+        dashboard_manager.disconnect(websocket)
+    except Exception:
+        dashboard_manager.disconnect(websocket)
+        raise
+
+
 
 if __name__ == "__main__":
     import uvicorn
