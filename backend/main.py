@@ -10,11 +10,14 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client
 
-load_dotenv()
-
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 SUPABASE_URL = os.getenv("supabase_url")
 SUPABASE_KEY = os.getenv("supabase_anonkey")
+
+print("URL:", SUPABASE_URL)
+print("KEY:", SUPABASE_KEY)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -199,6 +202,7 @@ def api_remove_device(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 def build_snapshot():
     vehicles  = supabase.table("vehicles").select("*").execute().data
     devices   = supabase.table("devices").select("*").execute().data
@@ -239,6 +243,7 @@ def build_snapshot():
             "pi_device": {
                 "id":          pi["id"],
                 "device_name": pi["device_name"],
+                "ip_address":  pi["ip_address"],
                 "is_active":   pi["is_active"],
             } if pi else None,
             "assets": assets_out,
@@ -272,6 +277,7 @@ def get_paired_devices_map():
         ]
         result[pi["id"]] = {
             "ambulanceId": veh["unit_number"],
+            "ipAddress":   pi["ip_address"],
             "devices":     devices,
         }
     return result
