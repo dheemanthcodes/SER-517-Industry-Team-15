@@ -29,6 +29,9 @@ jobs:
 
       - name: Run backend
         working-directory: backend
+        env:
+          supabase_url: https://dofckgebpdpglbyqlwei.supabase.co
+          supabase_anonkey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvZmNrZ2VicGRwZ2xieXFsd2VpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NzIwMzQsImV4cCI6MjA4ODI0ODAzNH0.PtdoIz2S2gFb77xnlLnfRxuvZmyMn08OQMVGTtMkjBk
         run: |
           uvicorn main:app --host 127.0.0.1 --port 8000 &
           sleep 5

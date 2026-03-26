@@ -2,3 +2,5 @@ fastapi
 uvicorn
 paramiko
 pydantic
+python-dotenv
+supabase
