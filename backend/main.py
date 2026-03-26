@@ -344,6 +344,35 @@ def build_snapshot():
 def get_dashboard():
     return build_snapshot()
 
+@app.get("/api/dashboard", tags=["Dashboard"], summary="Get full dashboard snapshot")
+def get_dashboard():
+    return build_snapshot()
+
+
+@app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
+def get_paired_devices_map():
+    snapshot = build_snapshot()
+    result = {}
+    for veh in snapshot["vehicles"]:
+        pi = veh.get("pi_device")
+        if not pi:
+            continue
+        devices = [
+            {"name": asset["label"], "address": asset["ble_tag"]["identifier"]}
+            for asset in veh["assets"]
+            if asset["ble_tag"] is not None
+        ]
+        result[pi["id"]] = {
+            "ambulanceId": veh["unit_number"],
+            "ipAddress": pi["ip_address"],
+            "devices": devices,
+        }
+    return result
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 if __name__ == "__main__":
     import uvicorn
 
