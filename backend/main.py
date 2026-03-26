@@ -340,7 +340,7 @@ def build_snapshot():
 #     }
 
 
-@app.get("/api/dashboard", tags=["Dashboard"], summary="Get full dashboard snapshot")
+@app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
 
