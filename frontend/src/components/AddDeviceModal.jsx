@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 
@@ -7,6 +7,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     const [error, setError] = useState(null)
     const [deviceForm, setDeviceForm] = useState({
         ambulanceNumber: '',
+        raspberryPiId: '',
         drugBox1Label: '',
         drugBox1BleId: '',
         drugBox2Label: '',
@@ -16,6 +17,38 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
         narcoticsPouch2Label: '',
         narcoticsPouch2BleId: ''
     })
+    const [availableRaspberryPis, setAvailableRaspberryPis] = useState([])
+
+    const loadAvailableRaspberryPis = () => {
+        try {
+            const savedPis = localStorage.getItem('configuredPis')
+            if (!savedPis) {
+                setAvailableRaspberryPis([])
+                return
+            }
+
+            const parsedPis = JSON.parse(savedPis)
+            if (!Array.isArray(parsedPis)) {
+                setAvailableRaspberryPis([])
+                return
+            }
+
+            const unassignedPis = parsedPis.filter(
+                (pi) => !pi.assignedAmbulanceId
+            )
+
+            setAvailableRaspberryPis(unassignedPis)
+        } catch (err) {
+            console.error('Failed to load Raspberry Pis from localStorage:', err)
+            setAvailableRaspberryPis([])
+        }
+    }
+
+    useEffect(() => {
+        if (show) {
+            loadAvailableRaspberryPis()
+        }
+    }, [show])
 
     const handleAddDevice = async (e) => {
         e.preventDefault()
@@ -27,6 +60,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
 
             setDeviceForm({
                 ambulanceNumber: '',
+                raspberryPiId: '',
                 drugBox1Label: '',
                 drugBox1BleId: '',
                 drugBox2Label: '',
@@ -86,6 +120,34 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                                 required
                                 disabled={loading}
                             />
+                        </div>
+
+                        <div className="form-field">
+                            <Typography.Text>Link Raspberry Pi</Typography.Text>
+                            <select
+                                className="form-select"
+                                value={deviceForm.raspberryPiId}
+                                onChange={(e) =>
+                                    setDeviceForm({
+                                        ...deviceForm,
+                                        raspberryPiId: e.target.value
+                                    })
+                                }
+                                disabled={loading || availableRaspberryPis.length === 0}
+                                required={availableRaspberryPis.length > 0}
+                            >
+                                <option value="">
+                                    {availableRaspberryPis.length > 0
+                                        ? 'Select Raspberry Pi'
+                                        : 'No unassigned Raspberry Pis available'}
+                                </option>
+
+                                {availableRaspberryPis.map((pi) => (
+                                    <option key={pi.id} value={pi.id}>
+                                        {pi.name}{pi.ip ? ` (${pi.ip})` : ''}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
