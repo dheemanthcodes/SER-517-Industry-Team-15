@@ -6,6 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remove_device, scan_devices
 
+import os
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv()
+
 
 SUPABASE_URL = os.getenv("supabase_url")
 SUPABASE_KEY = os.getenv("supabase_anonkey")
