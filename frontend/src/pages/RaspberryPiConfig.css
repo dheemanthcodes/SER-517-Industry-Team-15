@@ -242,14 +242,59 @@
 
 .pi-card {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 24px;
+    flex-direction: column;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
     transition: all 0.2s ease-in-out;
     width: 100%;
+    overflow: hidden;
+}
+
+.pi-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.pi-card-header:hover {
+    background: #f9fafb;
+}
+
+.pi-card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chevron {
+    display: inline-block;
+    font-size: 12px;
+    color: #9ca3af;
+    transition: transform 0.2s ease;
+}
+
+.chevron-open {
+    transform: rotate(90deg);
+}
+
+.device-count-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 4px 10px;
+    border-radius: 12px;
+}
+
+.pi-card-body {
+    padding: 0 24px 20px 24px;
+    border-top: 1px solid #f3f4f6;
+    animation: fadeIn 0.2s ease-in-out;
 }
 
 .pi-card-info strong {
@@ -297,6 +342,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    margin-top: 16px;
 }
 
 .btn-danger-outline {
@@ -347,3 +393,36 @@
 .pi-bluetooth-section {
     animation: fadeIn 0.3s ease-in-out;
 }
+
+/* Inline BLE device list inside each ambulance card */
+.pi-device-list {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.pi-device-list-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b7280;
+    margin: 0 0 10px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.compact-row {
+    padding: 10px 14px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+.compact-row .device-info strong {
+    font-size: 13px;
+    color: #374151;
+    word-break: break-all;
+}
+
+.compact-row .device-info .muted {
+    font-size: 12px;
+}

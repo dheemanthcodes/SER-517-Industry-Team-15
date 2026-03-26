@@ -2,13 +2,25 @@ import React, { useState, useEffect } from 'react'
 import './RaspberryPiConfig.css'
 
 function RaspberryPiConfig() {
+    // pis is an array derived from the backend response object
+    // Each entry: { piKey, ambulanceId, ipAddress, devices: [{name, address}] }
     const [pis, setPis] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedPi, setSelectedPi] = useState(null)
-    const [newPiName, setNewPiName] = useState('')
-    const [newPiIp, setNewPiIp] = useState('')
-    const [newPiAmbulanceId, setNewPiAmbulanceId] = useState('')
     const [searchTerm, setSearchTerm] = useState('')
+    const [expandedPis, setExpandedPis] = useState(new Set())
+
+    const toggleExpand = (piKey) => {
+        setExpandedPis(prev => {
+            const next = new Set(prev)
+            if (next.has(piKey)) {
+                next.delete(piKey)
+            } else {
+                next.add(piKey)
+            }
+            return next
+        })
+    }
 
     const [scanned, setScanned] = useState([])
     const [paired, setPaired] = useState([])
@@ -24,32 +36,37 @@ function RaspberryPiConfig() {
         }
     }, [])
 
+    /**
+     * Backend returns an object like:
+     * {
+     *   "pi-1": { "ambulanceId": "AMB-001", "ipAddress": "192.168.1.101", "devices": [...] },
+     *   "pi-2": { "ambulanceId": "AMB-002", "ipAddress": "192.168.1.102", "devices": [...] }
+     * }
+     */
     const fetchPiDetails = async () => {
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/fetchpidetails`)
             const json = await res.json()
-            if (json.vehicles) {
-                const piList = json.vehicles
-                    .filter(v => v.pi_device)
-                    .map(v => ({
-                        id: v.pi_device.id,
-                        ambulanceId: v.unit_number,
-                        ipAddress: v.pi_device.ip_address,
-                        deviceName: v.pi_device.device_name,
-                        isActive: v.pi_device.is_active
-                    }))
-                setPis(piList)
-            }
+
+            // Convert the keyed object into an array for easier rendering
+            const piList = Object.entries(json).map(([piKey, piData]) => ({
+                piKey,
+                ambulanceId: piData.ambulanceId,
+                ipAddress: piData.ipAddress,
+                devices: piData.devices || [],
+            }))
+            setPis(piList)
         } catch (e) {
-            console.error(e)
+            console.error('Failed to fetch Pi details:', e)
         } finally {
             setLoading(false)
         }
     }
 
-    const filteredPis = pis.filter(pi => {
-        return pi.ambulanceId.toLowerCase().includes(searchTerm.toLowerCase())
-    })
+    const filteredPis = pis.filter(pi =>
+        pi.ambulanceId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        pi.piKey.toLowerCase().includes(searchTerm.toLowerCase())
+    )
 
     useEffect(() => {
         if (selectedPi) {
@@ -61,24 +78,6 @@ function RaspberryPiConfig() {
             setManualMac('')
         }
     }, [selectedPi])
-
-    const handleAddPi = () => {
-        if (!newPiName.trim()) return
-        const newPi = {
-            id: Date.now().toString(),
-            name: newPiName.trim(),
-            ip: newPiIp.trim(),
-            ambulanceId: newPiAmbulanceId.trim()
-        }
-        setPis([...pis, newPi])
-        setNewPiName('')
-        setNewPiIp('')
-        setNewPiAmbulanceId('')
-    }
-
-    const handleRemovePi = (id) => {
-        setPis(pis.filter(p => p.id !== id))
-    }
 
     const fetchPaired = async () => {
         try {
@@ -177,39 +176,12 @@ function RaspberryPiConfig() {
 
             {!selectedPi ? (
                 <div className="pi-list-view">
-                    <div className="add-pi-box" style={{ marginTop: 0, marginBottom: '32px' }}>
-                        <h3 className="section-title" style={{ fontSize: '16px' }}>Add New Raspberry Pi</h3>
-                        <div className="add-pi-form">
-                            <input
-                                className="mac-input"
-                                placeholder="Name (e.g. Living Room Pi)"
-                                value={newPiName}
-                                onChange={(e) => setNewPiName(e.target.value)}
-                            />
-                            <input
-                                className="mac-input"
-                                placeholder="IP Address (e.g. 192.168.1.100)"
-                                value={newPiIp}
-                                onChange={(e) => setNewPiIp(e.target.value)}
-                            />
-                            <input
-                                className="mac-input"
-                                placeholder="Ambulance ID"
-                                value={newPiAmbulanceId}
-                                onChange={(e) => setNewPiAmbulanceId(e.target.value)}
-                            />
-                            <button onClick={handleAddPi} className="btn-secondary">
-                                Add Device
-                            </button>
-                        </div>
-                    </div>
-
                     <h2 className="section-title">Ambulances with Pi Devices</h2>
                     <div className="search-box" style={{ marginBottom: '20px' }}>
                         <input
                             type="text"
                             className="mac-input"
-                            placeholder="Search by Ambulance ID"
+                            placeholder="Search by Ambulance ID or Pi name"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{ width: '100%' }}
@@ -226,33 +198,59 @@ function RaspberryPiConfig() {
                     ) : (
                         <div className="pi-grid">
                             {filteredPis.map(pi => (
-                                <div key={pi.id} className="pi-card hover-lift">
-                                    <div className="pi-card-info">
-                                        {pi.ambulanceId && (
-                                            <div className="detail-row">
-                                                <span className="detail-label">Ambulance ID:</span>
-                                                <span className="detail-value ambulance-id-heading">{pi.ambulanceId}</span>
+                                <div key={pi.piKey} className="pi-card">
+                                    <div
+                                        className="pi-card-header"
+                                        onClick={() => toggleExpand(pi.piKey)}
+                                    >
+                                        <div className="pi-card-header-left">
+                                            <span className={`chevron ${expandedPis.has(pi.piKey) ? 'chevron-open' : ''}`}>&#9654;</span>
+                                            <span className="detail-label">Ambulance ID:</span>
+                                            <span className="detail-value ambulance-id-heading">{pi.ambulanceId}</span>
+                                        </div>
+                                        <span className="device-count-badge">{pi.devices.length} devices</span>
+                                    </div>
+
+                                    {expandedPis.has(pi.piKey) && (
+                                        <div className="pi-card-body">
+                                            <div className="pi-details">
+                                                <div className="detail-row">
+                                                    <span className="detail-label">Pi Name:</span>
+                                                    <span className="detail-value">{pi.piKey}</span>
+                                                </div>
+                                                <div className="detail-row">
+                                                    <span className="detail-label">Pi IP Address:</span>
+                                                    <span className="detail-value">{pi.ipAddress || 'No IP address'}</span>
+                                                </div>
+                                                <div className="detail-row">
+                                                    <span className="detail-label">BLE Devices:</span>
+                                                    <span className="detail-value">{pi.devices.length} tracked</span>
+                                                </div>
                                             </div>
-                                        )}
-                                        <div className="pi-details">
-                                            <div className="detail-row">
-                                                <span className="detail-label">Pi ID:</span>
-                                                <span className="detail-value">{pi.id}</span>
-                                            </div>
-                                            <div className="detail-row">
-                                                <span className="detail-label">Pi IP Address:</span>
-                                                <span className="detail-value">{pi.ipAddress || 'No IP address'}</span>
+
+                                            {pi.devices.length > 0 && (
+                                                <div className="pi-device-list">
+                                                    <h4 className="pi-device-list-title">Tracked BLE Devices</h4>
+                                                    <ul className="device-list">
+                                                        {pi.devices.map((device, idx) => (
+                                                            <li key={device.address || idx} className="device-row compact-row">
+                                                                <div className="device-info">
+                                                                    <strong>{device.name || 'Unknown'}</strong>
+                                                                    <div className="muted">{device.address}</div>
+                                                                </div>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+
+                                            <div className="pi-card-actions">
+                                                <button onClick={() => setSelectedPi(pi)} className="btn-primary">
+                                                    Manage Bluetooth
+                                                </button>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div className="pi-card-actions">
-                                        <button onClick={() => setSelectedPi(pi)} className="btn-primary">
-                                            Manage Bluetooth
-                                        </button>
-                                        <button onClick={() => handleRemovePi(pi.id)} className="btn-danger-outline">
-                                            Remove
-                                        </button>
-                                    </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -265,7 +263,10 @@ function RaspberryPiConfig() {
                             &larr; Back to Devices
                         </button>
                         <h2 className="section-title" style={{ marginBottom: 0 }}>
-                            {selectedPi.ambulanceId} <span className="muted" style={{ fontWeight: 400, marginLeft: '8px' }}>({selectedPi.ipAddress || 'No IP'})</span>
+                            {selectedPi.ambulanceId}
+                            <span className="muted" style={{ fontWeight: 400, marginLeft: '8px' }}>
+                                {selectedPi.piKey} — {selectedPi.ipAddress || 'No IP'}
+                            </span>
                         </h2>
                     </div>
 
@@ -345,3 +346,4 @@ function RaspberryPiConfig() {
 }
 
 export default RaspberryPiConfig
+
