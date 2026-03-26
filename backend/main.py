@@ -187,6 +187,10 @@ def api_remove_device(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ---------------------------------------------------------------------------
+# Mock data mapped to Supabase schema
+# ---------------------------------------------------------------------------
+
 MOCK_VEHICLES = [
     {"id": "veh-001", "unit_number": "AMB-001", "station_name": "Station Alpha"},
     {"id": "veh-002", "unit_number": "AMB-002", "station_name": "Station Bravo"},
@@ -280,44 +284,9 @@ def build_snapshot():
     }
 
 
-class DashboardManager:
-    def __init__(self):
-        self._clients: Set[WebSocket] = set()
-
-    async def connect(self, ws: WebSocket):
-        await ws.accept()
-        self._clients.add(ws)
-
-    def disconnect(self, ws: WebSocket):
-        self._clients.discard(ws)
-
-
-dashboard_manager = DashboardManager()
-
-
-@app.websocket("/ws/dashboard")
-async def ws_dashboard(websocket: WebSocket):
-    await dashboard_manager.connect(websocket)
-    try:
-        await websocket.send_json(build_snapshot())
-        while True:
-            raw = await websocket.receive_text()
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "detail": "Invalid JSON"})
-                continue
-            if msg.get("type") == "ping":
-                await websocket.send_json({"type": "pong"})
-            elif msg.get("type") == "refresh":
-                await websocket.send_json(build_snapshot())
-    except WebSocketDisconnect:
-        dashboard_manager.disconnect(websocket)
-    except Exception:
-        dashboard_manager.disconnect(websocket)
-        raise
-
-
+@app.get("/api/dashboard", tags=["Dashboard"], summary="Get full dashboard snapshot")
+def get_dashboard():
+    return build_snapshot()
 
 if __name__ == "__main__":
     import uvicorn
