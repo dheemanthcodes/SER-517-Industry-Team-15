@@ -218,46 +218,71 @@ def build_snapshot():
     for a in alerts:
         alerts_by_veh.setdefault(a["vehicle_id"], []).append(a)
 
-    vehicles_out = []
+    ui_snapshot = {}
+
     for veh in vehicles:
         vid = veh["id"]
-        pi  = device_by_veh.get(vid)
+        pi = device_by_veh.get(vid)
+
         assets_out = []
         for ast in assets:
             if ast["vehicle_id"] != vid:
                 continue
-            tag    = tag_by_asset.get(ast["id"])
+
+            tag = tag_by_asset.get(ast["id"])
             status = status_by_asset.get(ast["id"])
+
             assets_out.append({
-                "id":              ast["id"],
-                "type":            ast["type"],
-                "label":           ast["label"],
+                "id": ast["id"],
+                "type": ast["type"],
+                "label": ast["label"],
                 "parent_asset_id": ast["parent_asset_id"],
-                "ble_tag":  {"identifier": tag["identifier"], "tag_model": tag["tag_model"]} if tag else None,
-                "status":   {"state": status["state"], "last_seen_at": status["last_seen_at"], "last_rssi": status["last_rssi"]} if status else None,
+                "ble_tag": {
+                    "identifier": tag["identifier"],
+                    "tag_model": tag["tag_model"],
+                    "asset_id": tag["asset_id"],
+                } if tag else None,
+                "status": {
+                    "state": status["state"],
+                    "last_seen_at": status["last_seen_at"],
+                    "last_rssi": status["last_rssi"],
+                } if status else None,
             })
-        vehicles_out.append({
-            "id":           veh["id"],
-            "unit_number":  veh["unit_number"],
+
+        vehicle_snapshot = {
+            "id": veh["id"],
+            "unit_number": veh["unit_number"],
             "station_name": veh["station_name"],
             "pi_device": {
-                "id":          pi["id"],
+                "id": pi["id"],
                 "device_name": pi["device_name"],
-                "ip_address":  pi["ip_address"],
-                "is_active":   pi["is_active"],
+                "ip_address": pi["ip_address"],
+                "is_active": pi["is_active"],
             } if pi else None,
             "assets": assets_out,
             "alerts": alerts_by_veh.get(vid, []),
-        })
+        }
 
-    return {
-        "type":         "snapshot",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "vehicles":     vehicles_out,
-    }
+        if not pi:
+            continue
+
+        ui_snapshot[pi["device_name"]] = {
+            "ambulanceId": vehicle_snapshot["unit_number"],
+            "ipAddress": vehicle_snapshot["pi_device"]["ip_address"],
+            "devices": [
+                {
+                    "name": asset["ble_tag"]["asset_id"],
+                    "address": asset["ble_tag"]["identifier"],
+                }
+                for asset in vehicle_snapshot["assets"]
+                if asset["ble_tag"]
+            ],
+        }
+
+    return ui_snapshot
 
 
-@app.get("/api/dashboard", tags=["Dashboard"], summary="Get full dashboard snapshot")
+@app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
 
