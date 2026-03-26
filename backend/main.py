@@ -6,6 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remove_device, scan_devices
 
+
+# from supabase import create_client, use this once we want to connect to the real database instead of using mock data
+
+# SUPABASE_URL = "your-project-url"
+# SUPABASE_KEY = "your-anon-key"
+
+# supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
 app = FastAPI(
     title="Pi Bluetooth API",
     description=(
@@ -187,9 +196,7 @@ def api_remove_device(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ---------------------------------------------------------------------------
-# Mock data mapped to Supabase schema
-# ---------------------------------------------------------------------------
+
 
 MOCK_VEHICLES = [
     {"id": "veh-001", "unit_number": "AMB-001", "station_name": "Station Alpha"},
@@ -282,6 +289,55 @@ def build_snapshot():
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "vehicles":     vehicles_out,
     }
+
+# use this once mock data is removed
+# def build_snapshot():
+#     vehicles   = supabase.table("vehicles").select("*").execute().data
+#     devices    = supabase.table("devices").select("*").execute().data
+#     assets     = supabase.table("assets").select("*").execute().data
+#     ble_tags   = supabase.table("ble_tags").select("*").execute().data
+#     statuses   = supabase.table("asset_status").select("*").execute().data
+#     alerts     = supabase.table("alerts").select("*").execute().data
+
+#     tag_by_asset    = {t["asset_id"]: t for t in ble_tags}
+#     status_by_asset = {s["asset_id"]: s for s in statuses}
+#     device_by_veh   = {d["vehicle_id"]: d for d in devices}
+#     alerts_by_veh   = {}
+#     for a in alerts:
+#         alerts_by_veh.setdefault(a["vehicle_id"], []).append(a)
+
+#     vehicles_out = []
+#     for veh in vehicles:
+#         vid = veh["id"]
+#         pi  = device_by_veh.get(vid)
+#         assets_out = []
+#         for ast in assets:
+#             if ast["vehicle_id"] != vid:
+#                 continue
+#             tag    = tag_by_asset.get(ast["id"])
+#             status = status_by_asset.get(ast["id"])
+#             assets_out.append({
+#                 "id":              ast["id"],
+#                 "type":            ast["type"],
+#                 "label":           ast["label"],
+#                 "parent_asset_id": ast["parent_asset_id"],
+#                 "ble_tag":  {"identifier": tag["identifier"], "tag_model": tag["tag_model"]} if tag else None,
+#                 "status":   {"state": status["state"], "last_seen_at": status["last_seen_at"], "last_rssi": status["last_rssi"]} if status else None,
+#             })
+#         vehicles_out.append({
+#             "id":           veh["id"],
+#             "unit_number":  veh["unit_number"],
+#             "station_name": veh["station_name"],
+#             "pi_device": {"id": pi["id"], "device_name": pi["device_name"], "ip_address": pi["ip_address"], "is_active": pi["is_active"]} if pi else None,
+#             "assets": assets_out,
+#             "alerts": alerts_by_veh.get(vid, []),
+#         })
+
+#     return {
+#         "type":         "snapshot",
+#         "generated_at": datetime.now(timezone.utc).isoformat(),
+#         "vehicles":     vehicles_out,
+#     }
 
 
 @app.get("/api/dashboard", tags=["Dashboard"], summary="Get full dashboard snapshot")
