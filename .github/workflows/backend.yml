@@ -30,8 +30,8 @@ jobs:
       - name: Create .env
         working-directory: backend
         run: |
-          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
-          echo "SUPABASE_ANONKEY=${{ secrets.SUPABASE_ANONKEY }}" >> .env
+          echo "supabase_url=${{ secrets.supabase_url }}" >> .env
+          echo "supabase_anonkey=${{ secrets.supabase_anonkey }}" >> .env
 
       - name: Run backend
         working-directory: backend
