@@ -21,6 +21,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     const [availablePis, setAvailablePis] = useState([])
     const [piLoading, setPiLoading] = useState(false)
     const [piLoadError, setPiLoadError] = useState('')
+    const [draggedBleDevice, setDraggedBleDevice] = useState(null)
 
     const loadAvailablePis = async () => {
         setPiLoading(true)
@@ -57,6 +58,20 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     const selectedPi = useMemo(() => {
         return availablePis.find((pi) => pi.piKey === deviceForm.raspberryPiKey) || null
     }, [availablePis, deviceForm.raspberryPiKey])
+
+    const selectedPiDevices = useMemo(() => {
+        return Array.isArray(selectedPi?.devices) ? selectedPi.devices : []
+    }, [selectedPi])
+
+    useEffect(() => {
+        if (!show) {
+            setDraggedBleDevice(null)
+        }
+    }, [show])
+
+    useEffect(() => {
+        setDraggedBleDevice(null)
+    }, [deviceForm.raspberryPiKey])
 
     const handleAddDevice = async (e) => {
         e.preventDefault()
@@ -169,6 +184,42 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                                 <div><strong>Selected Pi:</strong> {selectedPi.piKey}</div>
                                 <div><strong>IP Address:</strong> {selectedPi.ipAddress || 'Not available'}</div>
                                 <div><strong>BLE Devices Found:</strong> {selectedPi.devices.length}</div>
+                            </div>
+                        )}
+
+                        {selectedPi && (
+                            <div className="ble-device-pool">
+                                <div className="ble-device-pool-header">
+                                    <Typography.Text>Available BLE Devices from Selected Pi</Typography.Text>
+                                    <div className="ble-device-pool-subtext">
+                                        Drag support will be enabled next. Manual entry in the BLE fields is still available.
+                                    </div>
+                                </div>
+
+                                {selectedPiDevices.length > 0 ? (
+                                    <div className="ble-device-list">
+                                        {selectedPiDevices.map((device, index) => (
+                                            <div
+                                                key={`${device.name || 'device'}-${device.address || index}`}
+                                                className={`ble-device-card ${draggedBleDevice?.address === device.address ? 'dragging' : ''}`}
+                                                draggable
+                                                onDragStart={() => setDraggedBleDevice(device)}
+                                                onDragEnd={() => setDraggedBleDevice(null)}
+                                            >
+                                                <div className="ble-device-name">
+                                                    {device.name || `BLE Device ${index + 1}`}
+                                                </div>
+                                                <div className="ble-device-address">
+                                                    {device.address || 'No BLE address available'}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="ble-device-empty">
+                                        No BLE devices were returned for the selected Raspberry Pi.
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

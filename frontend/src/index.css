@@ -1275,6 +1275,7 @@ form+.sbui-divider {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
+    align-items: flex-end;
 }
 
 .form-field {
@@ -1337,6 +1338,72 @@ form+.sbui-divider {
     background: #f3f4f6;
     color: #6b7280;
     cursor: not-allowed;
+}
+
+.ble-device-pool {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fafafa;
+}
+
+.ble-device-pool-header {
+    margin-bottom: 12px;
+}
+
+.ble-device-pool-subtext {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.ble-device-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.ble-device-card {
+    min-width: 180px;
+    max-width: 220px;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #ffffff;
+    cursor: grab;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    user-select: none;
+}
+
+.ble-device-card:hover {
+    border-color: #dc2626;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+}
+
+.ble-device-card.dragging {
+    opacity: 0.65;
+    transform: scale(0.98);
+    cursor: grabbing;
+}
+
+.ble-device-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 4px;
+}
+
+.ble-device-address {
+    font-size: 12px;
+    color: #4b5563;
+    word-break: break-all;
+}
+
+.ble-device-empty {
+    font-size: 13px;
+    color: #6b7280;
+    padding: 8px 0;
 }
 
 .modal-actions {
