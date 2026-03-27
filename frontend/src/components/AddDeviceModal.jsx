@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 
@@ -7,7 +7,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     const [error, setError] = useState(null)
     const [deviceForm, setDeviceForm] = useState({
         ambulanceNumber: '',
-        raspberryPiId: '',
+        raspberryPiKey: '',
         drugBox1Label: '',
         drugBox1BleId: '',
         drugBox2Label: '',
@@ -17,38 +17,46 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
         narcoticsPouch2Label: '',
         narcoticsPouch2BleId: ''
     })
-    const [availableRaspberryPis, setAvailableRaspberryPis] = useState([])
+    
+    const [availablePis, setAvailablePis] = useState([])
+    const [piLoading, setPiLoading] = useState(false)
+    const [piLoadError, setPiLoadError] = useState('')
 
-    const loadAvailableRaspberryPis = () => {
+    const loadAvailablePis = async () => {
+        setPiLoading(true)
+        setPiLoadError('')
+
         try {
-            const savedPis = localStorage.getItem('configuredPis')
-            if (!savedPis) {
-                setAvailableRaspberryPis([])
-                return
-            }
+            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/fetchpidetails`)
+            const json = await res.json()
 
-            const parsedPis = JSON.parse(savedPis)
-            if (!Array.isArray(parsedPis)) {
-                setAvailableRaspberryPis([])
-                return
-            }
+            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
+                piKey,
+                ambulanceId: piData?.ambulanceId || '',
+                ipAddress: piData?.ipAddress || '',
+                devices: Array.isArray(piData?.devices) ? piData.devices : []
+            }))
 
-            const unassignedPis = parsedPis.filter(
-                (pi) => !pi.assignedAmbulanceId
-            )
-
-            setAvailableRaspberryPis(unassignedPis)
+            const unassignedPis = piList.filter((pi) => !pi.ambulanceId)
+            setAvailablePis(unassignedPis)
         } catch (err) {
-            console.error('Failed to load Raspberry Pis from localStorage:', err)
-            setAvailableRaspberryPis([])
+            console.error('Failed to load Raspberry Pi options:', err)
+            setPiLoadError('Failed to load Raspberry Pi options.')
+            setAvailablePis([])
+        } finally {
+            setPiLoading(false)
         }
     }
 
     useEffect(() => {
         if (show) {
-            loadAvailableRaspberryPis()
+            loadAvailablePis()
         }
     }, [show])
+
+    const selectedPi = useMemo(() => {
+        return availablePis.find((pi) => pi.piKey === deviceForm.raspberryPiKey) || null
+    }, [availablePis, deviceForm.raspberryPiKey])
 
     const handleAddDevice = async (e) => {
         e.preventDefault()
@@ -60,7 +68,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
 
             setDeviceForm({
                 ambulanceNumber: '',
-                raspberryPiId: '',
+                raspberryPiKey: '',
                 drugBox1Label: '',
                 drugBox1BleId: '',
                 drugBox2Label: '',
@@ -123,32 +131,47 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                         </div>
 
                         <div className="form-field">
-                            <Typography.Text>Link Raspberry Pi</Typography.Text>
-                            <select
-                                className="form-select"
-                                value={deviceForm.raspberryPiId}
-                                onChange={(e) =>
-                                    setDeviceForm({
-                                        ...deviceForm,
-                                        raspberryPiId: e.target.value
-                                    })
-                                }
-                                disabled={loading || availableRaspberryPis.length === 0}
-                                required={availableRaspberryPis.length > 0}
-                            >
-                                <option value="">
-                                    {availableRaspberryPis.length > 0
+                        <Typography.Text>Link Raspberry Pi</Typography.Text>
+                        <select
+                            className="form-select"
+                            value={deviceForm.raspberryPiKey}
+                            onChange={(e) =>
+                                setDeviceForm({
+                                    ...deviceForm,
+                                    raspberryPiKey: e.target.value
+                                })
+                            }
+                            disabled={loading || piLoading || availablePis.length === 0}
+                        >
+                            <option value="">
+                                {piLoading
+                                    ? 'Loading Raspberry Pis...'
+                                    : availablePis.length > 0
                                         ? 'Select Raspberry Pi'
                                         : 'No unassigned Raspberry Pis available'}
-                                </option>
+                            </option>
 
-                                {availableRaspberryPis.map((pi) => (
-                                    <option key={pi.id} value={pi.id}>
-                                        {pi.name}{pi.ip ? ` (${pi.ip})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                            {availablePis.map((pi) => (
+                                <option key={pi.piKey} value={pi.piKey}>
+                                    {pi.piKey}{pi.ipAddress ? ` (${pi.ipAddress})` : ''}
+                                </option>
+                            ))}
+                        </select>
+
+                        {piLoadError && (
+                            <div className="pi-inline-note pi-inline-note-error">
+                                {piLoadError}
+                            </div>
+                        )}
+
+                        {selectedPi && (
+                            <div className="pi-selected-preview">
+                                <div><strong>Selected Pi:</strong> {selectedPi.piKey}</div>
+                                <div><strong>IP Address:</strong> {selectedPi.ipAddress || 'Not available'}</div>
+                                <div><strong>BLE Devices Found:</strong> {selectedPi.devices.length}</div>
+                            </div>
+                        )}
+                    </div>
                     </div>
 
                     <div className="form-section">
