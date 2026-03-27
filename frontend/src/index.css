@@ -1358,6 +1358,19 @@ form+.sbui-divider {
     color: #6b7280;
 }
 
+.ble-device-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ble-device-group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+}
+
 .ble-device-list {
     display: flex;
     flex-wrap: wrap;
@@ -1371,20 +1384,12 @@ form+.sbui-divider {
     border: 1px solid #d1d5db;
     border-radius: 8px;
     background: #ffffff;
-    cursor: grab;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-    user-select: none;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .ble-device-card:hover {
     border-color: #dc2626;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
-}
-
-.ble-device-card.dragging {
-    opacity: 0.65;
-    transform: scale(0.98);
-    cursor: grabbing;
 }
 
 .ble-device-name {

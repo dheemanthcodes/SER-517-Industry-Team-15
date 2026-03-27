@@ -21,7 +21,6 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     const [availablePis, setAvailablePis] = useState([])
     const [piLoading, setPiLoading] = useState(false)
     const [piLoadError, setPiLoadError] = useState('')
-    const [draggedBleDevice, setDraggedBleDevice] = useState(null)
 
     const loadAvailablePis = async () => {
         setPiLoading(true)
@@ -63,15 +62,17 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
         return Array.isArray(selectedPi?.devices) ? selectedPi.devices : []
     }, [selectedPi])
 
-    useEffect(() => {
-        if (!show) {
-            setDraggedBleDevice(null)
-        }
-    }, [show])
+    const boxDevices = useMemo(() => {
+        return selectedPiDevices.filter((device) =>
+            (device.name || '').toLowerCase().includes('box')
+        )
+    }, [selectedPiDevices])
 
-    useEffect(() => {
-        setDraggedBleDevice(null)
-    }, [deviceForm.raspberryPiKey])
+    const pouchDevices = useMemo(() => {
+        return selectedPiDevices.filter((device) =>
+            (device.name || '').toLowerCase().includes('pouch')
+        )
+    }, [selectedPiDevices])
 
     const handleAddDevice = async (e) => {
         e.preventDefault()
@@ -181,39 +182,69 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
 
                         {selectedPi && (
                             <div className="pi-selected-preview">
-                                <div><strong>Selected Pi:</strong> {selectedPi.piKey}</div>
+                                <div><strong>Selected Raspberry Pi:</strong> {selectedPi.piKey}</div>
                                 <div><strong>IP Address:</strong> {selectedPi.ipAddress || 'Not available'}</div>
-                                <div><strong>BLE Devices Found:</strong> {selectedPi.devices.length}</div>
+                                <div><strong>BLE Tags Found #:</strong> {selectedPi.devices.length}</div>
                             </div>
                         )}
 
                         {selectedPi && (
                             <div className="ble-device-pool">
                                 <div className="ble-device-pool-header">
-                                    <Typography.Text>Available BLE Devices from Selected Pi</Typography.Text>
-                                    <div className="ble-device-pool-subtext">
-                                        Drag support will be enabled next. Manual entry in the BLE fields is still available.
-                                    </div>
+                                    <Typography.Text>Available BLE Tags from Selected Raspberry Pi</Typography.Text>
                                 </div>
 
                                 {selectedPiDevices.length > 0 ? (
-                                    <div className="ble-device-list">
-                                        {selectedPiDevices.map((device, index) => (
-                                            <div
-                                                key={`${device.name || 'device'}-${device.address || index}`}
-                                                className={`ble-device-card ${draggedBleDevice?.address === device.address ? 'dragging' : ''}`}
-                                                draggable
-                                                onDragStart={() => setDraggedBleDevice(device)}
-                                                onDragEnd={() => setDraggedBleDevice(null)}
-                                            >
-                                                <div className="ble-device-name">
-                                                    {device.name || `BLE Device ${index + 1}`}
+                                    <div className="ble-device-groups">
+                                        <div className="ble-device-group">
+                                            <div className="ble-device-group-title">Drug Box IDs</div>
+                                            {boxDevices.length > 0 ? (
+                                                <div className="ble-device-list">
+                                                    {boxDevices.map((device, index) => (
+                                                        <div
+                                                            key={`${device.name || 'box'}-${device.address || index}`}
+                                                            className="ble-device-card"
+                                                        >
+                                                            <div className="ble-device-name">
+                                                                {device.name || `Box Device ${index + 1}`}
+                                                            </div>
+                                                            <div className="ble-device-address">
+                                                                {device.address || 'No BLE address available'}
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                                <div className="ble-device-address">
-                                                    {device.address || 'No BLE address available'}
+                                            ) : (
+                                                <div className="ble-device-empty">
+                                                    No box BLE devices were returned for this Raspberry Pi.
                                                 </div>
-                                            </div>
-                                        ))}
+                                            )}
+                                        </div>
+
+                                        <div className="ble-device-group">
+                                            <div className="ble-device-group-title">Narcotics Pouch IDs</div>
+                                            {pouchDevices.length > 0 ? (
+                                                <div className="ble-device-list">
+                                                    {pouchDevices.map((device, index) => (
+                                                        <div
+                                                            key={`${device.name || 'pouch'}-${device.address || index}`}
+                                                            className="ble-device-card"
+                                                        >
+                                                            <div className="ble-device-name">
+                                                                {device.name || `Pouch Device ${index + 1}`}
+                                                            </div>
+                                                            <div className="ble-device-address">
+                                                                {device.address || 'No BLE address available'}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="ble-device-empty">
+                                                    No pouch BLE devices were returned for this Raspberry Pi.
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="ble-device-empty">
