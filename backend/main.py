@@ -9,6 +9,7 @@ from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remo
 import os
 from dotenv import load_dotenv
 from supabase import create_client
+from pydantic import BaseModel
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -306,6 +307,81 @@ def get_paired_devices_map():
             "devices":     devices,
         }
     return result
+
+
+class PiDetailsPayload(BaseModel):
+    name: str
+    ip_address: str
+    ambulance_id: str
+
+@app.post("/api/addpidetails", tags=["Pi Data"], summary="Add or update Raspberry Pi details")
+def add_pi_details(payload: PiDetailsPayload):
+    try:
+        name = payload.name.strip()
+        ip_address = payload.ip_address.strip()
+        ambulance_id = payload.ambulance_id.strip()
+
+        if not name or not ip_address or not ambulance_id:
+            raise HTTPException(status_code=400, detail="name, ip_address, and ambulance_id are required")
+
+        vehicle_response = (
+            supabase.table("vehicles")
+            .select("id, unit_number")
+            .eq("unit_number", ambulance_id)
+            .execute()
+        )
+
+        vehicles = vehicle_response.data
+        if not vehicles:
+            raise HTTPException(status_code=404, detail="Ambulance not found")
+
+        vehicle_id = vehicles[0]["id"]
+
+        device_response = (
+            supabase.table("devices")
+            .select("id, vehicle_id")
+            .eq("vehicle_id", vehicle_id)
+            .execute()
+        )
+
+        devices = device_response.data
+
+        if devices:
+            updated_device = (
+                        supabase.table("devices")
+                        .update({
+                            "device_name": name,
+                            "ip_address": ip_address,
+                        })
+                        .eq("vehicle_id", vehicle_id)
+                        .execute()
+                    )
+
+            return {
+                "status": "success",
+                "message": "Pi details updated successfully",
+            }
+
+        inserted_device = (
+            supabase.table("devices")
+            .insert({
+                "device_name": name,
+                "ip_address": ip_address,
+                "vehicle_id": vehicle_id,
+                "is_active": True,
+            })
+            .execute()
+        )
+
+        return {
+            "status": "success",
+            "message": "Pi details added successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
