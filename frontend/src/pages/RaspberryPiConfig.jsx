@@ -9,6 +9,10 @@ function RaspberryPiConfig() {
     const [selectedPi, setSelectedPi] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [expandedPis, setExpandedPis] = useState(new Set())
+    const [newPiName, setNewPiName] = useState('')
+    const [newPiIp, setNewPiIp] = useState('')
+    const [newPiAmbulanceId, setNewPiAmbulanceId] = useState('')
+    const [addPiMessage, setAddPiMessage] = useState('')
 
     const toggleExpand = (piKey) => {
         setExpandedPis(prev => {
@@ -60,6 +64,45 @@ function RaspberryPiConfig() {
             console.error('Failed to fetch Pi details:', e)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleAddPi = async () => {
+        if (!newPiName.trim()) return setAddPiMessage('Name is required.')
+        if (!newPiIp.trim()) return setAddPiMessage('IP Address is required.')
+        if (!newPiAmbulanceId.trim()) return setAddPiMessage('Ambulance ID is required.')
+
+        setAddPiMessage('Adding...')
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/addpidetails`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newPiName.trim(),
+                    ip_address: newPiIp.trim(),
+                    ambulance_id: newPiAmbulanceId.trim(),
+                }),
+            })
+            const json = await res.json()
+            if (res.ok) {
+                const newPi = {
+                    piKey: newPiName.trim(),
+                    ipAddress: newPiIp.trim(),
+                    ambulanceId: newPiAmbulanceId.trim(),
+                    devices: [],
+                }
+                setPis(prev => [newPi, ...prev])
+                setNewPiName('')
+                setNewPiIp('')
+                setNewPiAmbulanceId('')
+                setAddPiMessage('Raspberry Pi added successfully.')
+                setTimeout(() => setAddPiMessage(''), 3000)
+            } else {
+                setAddPiMessage(`Failed: ${json.detail || json.message || 'Unknown error'}`)
+            }
+        } catch (e) {
+            console.error(e)
+            setAddPiMessage('Error connecting to server.')
         }
     }
 
@@ -176,6 +219,36 @@ function RaspberryPiConfig() {
 
             {!selectedPi ? (
                 <div className="pi-list-view">
+                    <div className="add-pi-box" style={{ marginTop: 0, marginBottom: '32px' }}>
+                        <h3 className="section-title" style={{ fontSize: '16px' }}>Add Raspberry Pi</h3>
+                        <div className="add-pi-form">
+                            <input
+                                className="mac-input"
+                                placeholder="Name (e.g. pi-3)"
+                                value={newPiName}
+                                onChange={(e) => setNewPiName(e.target.value)}
+                            />
+                            <input
+                                className="mac-input"
+                                placeholder="IP Address (e.g. 192.168.1.100)"
+                                value={newPiIp}
+                                onChange={(e) => setNewPiIp(e.target.value)}
+                            />
+                            <input
+                                className="mac-input"
+                                placeholder="Ambulance ID (e.g. AMB-003)"
+                                value={newPiAmbulanceId}
+                                onChange={(e) => setNewPiAmbulanceId(e.target.value)}
+                            />
+                            <button onClick={handleAddPi} className="btn-secondary">
+                                Add Device
+                            </button>
+                        </div>
+                        {addPiMessage && (
+                            <p className="status-message" style={{ marginTop: '12px' }}>{addPiMessage}</p>
+                        )}
+                    </div>
+
                     <h2 className="section-title">Ambulances with Pi Devices</h2>
                     <div className="search-box" style={{ marginBottom: '20px' }}>
                         <input
