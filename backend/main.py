@@ -1,14 +1,19 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-
-from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remove_device, scan_devices
-
 import os
 from dotenv import load_dotenv
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
+
+from pi_service import (
+    get_bluetooth_data,
+    get_paired_devices,
+    pair_device,
+    remove_device,
+    scan_devices,
+)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -19,7 +24,6 @@ print("URL:", SUPABASE_URL)
 print("KEY:", SUPABASE_KEY)
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 
 app = FastAPI(
     title="Pi Bluetooth API",
@@ -33,11 +37,11 @@ app = FastAPI(
         {"name": "General", "description": "Basic health and welcome routes."},
         {"name": "Pi Data", "description": "Receive JSON data sent from a Raspberry Pi."},
         {"name": "Bluetooth", "description": "Manage Bluetooth scanning, pairing, and removal through the Pi."},
+        {"name": "Dashboard", "description": "Dashboard and device management data endpoints."},
     ],
 )
 
 latest_pi_payload: Optional[Dict[str, Any]] = None
-
 
 ALLOWED_DEVICES = {
     "pi-001": "6gOIpiSJ_zlS_hskU8zkIDL0kvQta5zKzsERk98uKj0",
@@ -83,6 +87,7 @@ def receive_pi_data(
         "payload": payload,
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
+
     return {
         "status": "success",
         "message": "Raspberry Pi data received successfully",
@@ -204,61 +209,77 @@ def api_remove_device(payload: dict):
 
 
 def build_snapshot():
-    vehicles  = supabase.table("vehicles").select("*").execute().data
-    devices   = supabase.table("devices").select("*").execute().data
-    assets    = supabase.table("assets").select("*").execute().data
-    ble_tags  = supabase.table("ble_tags").select("*").execute().data
-    statuses  = supabase.table("asset_status").select("*").execute().data
-    alerts    = supabase.table("alerts").select("*").execute().data
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+    statuses = supabase.table("asset_status").select("*").execute().data or []
+    alerts = supabase.table("alerts").select("*").execute().data or []
 
-    tag_by_asset    = {t["asset_id"]: t for t in ble_tags}
-    status_by_asset = {s["asset_id"]: s for s in statuses}
-    device_by_veh   = {d["vehicle_id"]: d for d in devices}
-    alerts_by_veh   = {}
+    tag_by_asset = {t["asset_id"]: t for t in ble_tags if t.get("asset_id")}
+    status_by_asset = {s["asset_id"]: s for s in statuses if s.get("asset_id")}
+    device_by_veh = {d["vehicle_id"]: d for d in devices if d.get("vehicle_id")}
+
+    alerts_by_veh = {}
     for a in alerts:
-        alerts_by_veh.setdefault(a["vehicle_id"], []).append(a)
+        vehicle_id = a.get("vehicle_id")
+        if not vehicle_id:
+            continue
+        alerts_by_veh.setdefault(vehicle_id, []).append(a)
 
     ui_snapshot = {}
 
     for veh in vehicles:
-        vid = veh["id"]
+        vid = veh.get("id")
+        if not vid:
+            continue
+
         pi = device_by_veh.get(vid)
 
         assets_out = []
         for ast in assets:
-            if ast["vehicle_id"] != vid:
+            if ast.get("vehicle_id") != vid:
                 continue
 
-            tag = tag_by_asset.get(ast["id"])
-            status = status_by_asset.get(ast["id"])
+            ast_id = ast.get("id")
+            tag = tag_by_asset.get(ast_id)
+            status = status_by_asset.get(ast_id)
 
-            assets_out.append({
-                "id": ast["id"],
-                "type": ast["type"],
-                "label": ast["label"],
-                "parent_asset_id": ast["parent_asset_id"],
-                "ble_tag": {
-                    "identifier": tag["identifier"],
-                    "tag_model": tag["tag_model"],
-                    "asset_id": tag["asset_id"],
-                } if tag else None,
-                "status": {
-                    "state": status["state"],
-                    "last_seen_at": status["last_seen_at"],
-                    "last_rssi": status["last_rssi"],
-                } if status else None,
-            })
+            assets_out.append(
+                {
+                    "id": ast.get("id"),
+                    "type": ast.get("type"),
+                    "label": ast.get("label"),
+                    "parent_asset_id": ast.get("parent_asset_id"),
+                    "ble_tag": {
+                        "identifier": tag["identifier"],
+                        "tag_model": tag["tag_model"],
+                        "asset_id": tag["asset_id"],
+                    }
+                    if tag
+                    else None,
+                    "status": {
+                        "state": status["state"],
+                        "last_seen_at": status["last_seen_at"],
+                        "last_rssi": status["last_rssi"],
+                    }
+                    if status
+                    else None,
+                }
+            )
 
         vehicle_snapshot = {
-            "id": veh["id"],
-            "unit_number": veh["unit_number"],
-            "station_name": veh["station_name"],
+            "id": veh.get("id"),
+            "unit_number": veh.get("unit_number"),
+            "station_name": veh.get("station_name"),
             "pi_device": {
-                "id": pi["id"],
-                "device_name": pi["device_name"],
-                "ip_address": pi["ip_address"],
-                "is_active": pi["is_active"],
-            } if pi else None,
+                "id": pi.get("id"),
+                "device_name": pi.get("device_name"),
+                "ip_address": pi.get("ip_address"),
+                "is_active": pi.get("is_active"),
+            }
+            if pi
+            else None,
             "assets": assets_out,
             "alerts": alerts_by_veh.get(vid, []),
         }
@@ -307,9 +328,11 @@ def build_device_management_payload():
 
         boxes = []
         pouches = []
+
         for asset in vehicle_assets:
             asset_type = (asset.get("type") or "").upper()
             tag = ble_by_asset.get(asset.get("id"))
+
             payload = {
                 "asset_id": asset.get("id"),
                 "label": asset.get("label"),
@@ -357,22 +380,28 @@ def get_device_management_data():
             "data": data,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch device management data: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch device management data: {str(e)}",
+        )
 
 
 @app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
 def get_paired_devices_map():
     snapshot = build_snapshot()
     result = {}
+
     for device_name, data in snapshot.items():
         result[device_name] = {
             "ambulanceId": data.get("ambulanceId"),
             "ipAddress": data.get("ipAddress"),
             "devices": data.get("devices", []),
         }
+
     return result
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
