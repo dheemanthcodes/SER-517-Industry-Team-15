@@ -288,6 +288,53 @@ def get_dashboard():
     return build_snapshot()
 
 
+@app.post("/api/updateambulance", tags=["Dashboard"], summary="Update an ambulance and its assets")
+def update_ambulance(payload: dict):
+    vehicle_id  = payload.get("vehicle_id")
+    unit_number = (payload.get("unit_number") or "").strip()
+    station_name = (payload.get("station_name") or "").strip()
+    assets = payload.get("assets", [])
+
+    if not vehicle_id:
+        raise HTTPException(status_code=400, detail="'vehicle_id' is required")
+    if not unit_number:
+        raise HTTPException(status_code=400, detail="'unit_number' is required")
+
+    try:
+        rpc_payload = {
+            "p_vehicle_id":  vehicle_id,
+            "p_unit_number": unit_number,
+            "p_station_name": station_name,
+            "p_assets": [
+                {
+                    "id":             a.get("id"),
+                    "type":           a.get("type"),
+                    "label":          a.get("label"),
+                    "ble_identifier": (a.get("ble_identifier") or "").strip(),
+                    "parent_asset_id": a.get("parent_asset_id"),
+                }
+                for a in assets
+            ],
+        }
+
+        result = supabase.rpc("update_ambulance", rpc_payload).execute()
+
+        try:
+            supabase.table("alerts").insert({
+                "asset_id":   vehicle_id,
+                "vehicle_id": vehicle_id,
+                "status":     "OPEN",
+                "reason":     f"Device updated: {unit_number}",
+                "opened_at":  datetime.now(timezone.utc).isoformat(),
+            }).execute()
+        except Exception as alert_err:
+            print(f"[WARN] Failed to log audit alert: {alert_err}")
+
+        return {"status": "success", "message": "Ambulance updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
 def get_paired_devices_map():
     snapshot = build_snapshot()
