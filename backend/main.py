@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import os
+
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -253,16 +254,16 @@ def build_snapshot():
                     "label": ast.get("label"),
                     "parent_asset_id": ast.get("parent_asset_id"),
                     "ble_tag": {
-                        "identifier": tag["identifier"],
-                        "tag_model": tag["tag_model"],
-                        "asset_id": tag["asset_id"],
+                        "identifier": tag.get("identifier"),
+                        "tag_model": tag.get("tag_model"),
+                        "asset_id": tag.get("asset_id"),
                     }
                     if tag
                     else None,
                     "status": {
-                        "state": status["state"],
-                        "last_seen_at": status["last_seen_at"],
-                        "last_rssi": status["last_rssi"],
+                        "state": status.get("state"),
+                        "last_seen_at": status.get("last_seen_at"),
+                        "last_rssi": status.get("last_rssi"),
                     }
                     if status
                     else None,
