@@ -91,12 +91,12 @@ function DeviceManagement() {
                 assets: (prev.assets || []).map((asset) =>
                     asset.id === assetId
                         ? {
-                              ...asset,
-                              ble_tag: {
-                                  ...(asset.ble_tag || {}),
-                                  identifier: value
-                              }
-                          }
+                            ...asset,
+                            ble_tag: {
+                                ...(asset.ble_tag || {}),
+                                identifier: value
+                            }
+                        }
                         : asset
                 )
             }
@@ -152,10 +152,10 @@ function DeviceManagement() {
 
         try {
             const payload = {
-                p_vehicle_id: vehicleIdToSave,
-                p_unit_number: unitNumber,
-                p_station_name: (vehicleDataToSave.station_name || '').trim(),
-                p_assets: (vehicleDataToSave.assets || []).map((asset) => ({
+                vehicle_id: vehicleIdToSave,
+                unit_number: unitNumber,
+                station_name: (vehicleDataToSave.station_name || '').trim(),
+                assets: (vehicleDataToSave.assets || []).map((asset) => ({
                     id: asset.id,
                     type: asset.type,
                     label: asset.label,
@@ -167,38 +167,20 @@ function DeviceManagement() {
                 }))
             }
 
-            // Persist updates server-side via RPC because your RLS policy
-            // blocks client updates into `vehicles`/`assets`.
-            const { error: rpcError } = await supabase.rpc(
-                'update_ambulance',
-                payload
-            )
-            if (rpcError) throw rpcError
+            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/updateambulance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
 
-            setVehicles((prev) =>
-                prev.map((vehicle) =>
-                    vehicle.id === vehicleIdToSave ? vehicleDataToSave : vehicle
-                )
-            )
+            const json = await res.json()
+            if (!res.ok) throw new Error(json.detail || json.message || 'Update failed')
+
             await fetchVehicles()
             setExpandedVehicle(vehicleIdToSave)
-
             setEditingVehicleId(null)
             setEditingVehicleData(null)
             setEditingError('')
-
-            // UI-level audit entry (not blocking the edit save).
-            try {
-                await supabase.from('alerts').insert({
-                    asset_id: vehicleIdToSave,
-                    vehicle_id: vehicleIdToSave,
-                    status: 'OPEN',
-                    reason: `Device updated: ${unitNumber}`,
-                    opened_at: new Date().toISOString()
-                })
-            } catch (error) {
-                console.error('Error logging device update event:', error)
-            }
         } catch (error) {
             console.error('Error updating device:', error)
             setEditingError(
@@ -374,7 +356,7 @@ function DeviceManagement() {
                         </div>
                     ) : vehicles.length === 0 ? (
                         <div className="vehicles-state vehicles-state--subtle">
-                            No vehicles registered yet. Use &quot;Register Ambulance&quot; to add one.
+                            No vehicles registered yet. Use "Register Ambulance" to add one.
                         </div>
                     ) : (
                         vehicles.map((vehicle) => {
@@ -385,8 +367,8 @@ function DeviceManagement() {
 
                             const currentVehicle =
                                 isEditing &&
-                                editingVehicleData &&
-                                editingVehicleData.id === vehicle.id
+                                    editingVehicleData &&
+                                    editingVehicleData.id === vehicle.id
                                     ? editingVehicleData
                                     : vehicle
 
@@ -514,152 +496,152 @@ function DeviceManagement() {
                                                         No drug boxes configured for this ambulance.
                                                     </div>
                                                 ) : (
-                                                    drugBoxes.map((box, index) => (
-                                                        <div key={box.id} className="vehicle-row">
-                                                            <div className="vehicle-row-main">
-                                                                <span className="vehicle-row-prefix">
-                                                                    Box {index + 1}
-                                                                </span>
-                                                                {isEditing ? (
-                                                                    <Input
-                                                                        value={box.label || ''}
-                                                                        onChange={(e) =>
-                                                                            handleAssetLabelChange(
-                                                                                box.id,
-                                                                                e.target.value
-                                                                            )
-                                                                        }
-                                                                        style={{ width: '160px' }}
-                                                                    />
-                                                                ) : (
-                                                                    <span className="vehicle-row-label">
-                                                                        {box.label}
+                                                    <div className="vehicle-assets-grid">
+                                                        {drugBoxes.slice(0, 2).map((box, index) => (
+                                                            <div key={box.id} className="vehicle-asset-card">
+                                                                <div className="vehicle-asset-header">
+                                                                    <span className="vehicle-asset-icon">📦</span>
+                                                                    <span className="vehicle-asset-title">
+                                                                        Box {index + 1}
                                                                     </span>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="vehicle-row-meta">
-                                                                <span className="pill pill-ble">
-                                                                    {isEditing ? (
-                                                                        <span className="pill-code">
+                                                                </div>
+                                                                <div className="vehicle-asset-body">
+                                                                    <div className="vehicle-asset-field">
+                                                                        <div className="vehicle-asset-label">Label</div>
+                                                                        {isEditing ? (
                                                                             <Input
-                                                                                value={
-                                                                                    box.ble_tag?.identifier || ''
+                                                                                value={box.label || ''}
+                                                                                onChange={(e) =>
+                                                                                    handleAssetLabelChange(
+                                                                                        box.id,
+                                                                                        e.target.value
+                                                                                    )
                                                                                 }
+                                                                            />
+                                                                        ) : (
+                                                                            <div className="vehicle-asset-value">
+                                                                                {box.label}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="vehicle-asset-field">
+                                                                        <div className="vehicle-asset-label">BLE Identifier</div>
+                                                                        {isEditing ? (
+                                                                            <Input
+                                                                                value={box.ble_tag?.identifier || ''}
                                                                                 onChange={(e) =>
                                                                                     handleAssetBleChange(
                                                                                         box.id,
                                                                                         e.target.value
                                                                                     )
                                                                                 }
-                                                                                style={{ width: '190px' }}
                                                                             />
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="pill-code">
-                                                                            {box.ble_tag?.identifier}
-                                                                        </span>
-                                                                    )}
-                                                                </span>
+                                                                        ) : (
+                                                                            <div className="vehicle-asset-ble">
+                                                                                {box.ble_tag?.identifier}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))
+                                                        ))}
+                                                    </div>
                                                 )}
                                             </div>
 
                                             <div className="vehicle-section">
-                                                <div className="vehicle-section-label">
-                                                    NARCOTICS POUCHES
-                                                </div>
+                                                <div className="vehicle-section-label">NARCOTICS POUCHES</div>
                                                 {pouches.length === 0 ? (
                                                     <div className="vehicle-empty-row">
                                                         No narcotics pouches configured for this ambulance.
                                                     </div>
                                                 ) : (
-                                                    pouches.map((pouch, index) => {
-                                                        const parentLabel = pouch.parent_asset_id
-                                                            ? boxLabelById[pouch.parent_asset_id] ||
-                                                              'Unassigned'
-                                                            : 'Unassigned'
+                                                    <div className="vehicle-assets-grid">
+                                                        {pouches.slice(0, 2).map((pouch, index) => {
+                                                            const parentLabel = pouch.parent_asset_id
+                                                                ? boxLabelById[pouch.parent_asset_id] ||
+                                                                'Unassigned'
+                                                                : 'Unassigned'
 
-                                                        return (
-                                                            <div key={pouch.id} className="vehicle-row">
-                                                                <div className="vehicle-row-main">
-                                                                    <span className="vehicle-row-prefix">
-                                                                        Pouch {index + 1}
-                                                                    </span>
-                                                                    {isEditing ? (
-                                                                        <Input
-                                                                            value={pouch.label || ''}
-                                                                            onChange={(e) =>
-                                                                                handleAssetLabelChange(
-                                                                                    pouch.id,
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                            style={{ width: '180px' }}
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="vehicle-row-label">
-                                                                            {pouch.label}
+                                                            return (
+                                                                <div key={pouch.id} className="vehicle-asset-card">
+                                                                    <div className="vehicle-asset-header">
+                                                                        <span className="vehicle-asset-icon">👝</span>
+                                                                        <span className="vehicle-asset-title">
+                                                                            Pouch {index + 1}
                                                                         </span>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="vehicle-row-meta vehicle-row-meta--pouch">
-                                                                    <span className="pill pill-ble">
-                                                                        {isEditing ? (
-                                                                            <span className="pill-code">
+                                                                    </div>
+                                                                    <div className="vehicle-asset-body">
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">Label</div>
+                                                                            {isEditing ? (
                                                                                 <Input
-                                                                                    value={
-                                                                                        pouch.ble_tag?.identifier ||
-                                                                                        ''
+                                                                                    value={pouch.label || ''}
+                                                                                    onChange={(e) =>
+                                                                                        handleAssetLabelChange(
+                                                                                            pouch.id,
+                                                                                            e.target.value
+                                                                                        )
                                                                                     }
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="vehicle-asset-value">
+                                                                                    {pouch.label}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">BLE Identifier</div>
+                                                                            {isEditing ? (
+                                                                                <Input
+                                                                                    value={pouch.ble_tag?.identifier || ''}
                                                                                     onChange={(e) =>
                                                                                         handleAssetBleChange(
                                                                                             pouch.id,
                                                                                             e.target.value
                                                                                         )
                                                                                     }
-                                                                                    style={{ width: '190px' }}
                                                                                 />
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="pill-code">
-                                                                                {pouch.ble_tag?.identifier}
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-
-                                                                    {isEditing ? (
-                                                                        <select
-                                                                            value={pouch.parent_asset_id || ''}
-                                                                            onChange={(e) =>
-                                                                                handleAssetParentChange(
-                                                                                    pouch.id,
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                        >
-                                                                            <option value="">Unassigned</option>
-                                                                            {drugBoxes.map((box) => (
-                                                                                <option
-                                                                                    key={box.id}
-                                                                                    value={box.id}
+                                                                            ) : (
+                                                                                <div className="vehicle-asset-ble">
+                                                                                    {pouch.ble_tag?.identifier}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">Assigned to</div>
+                                                                            {isEditing ? (
+                                                                                <select
+                                                                                    value={pouch.parent_asset_id || ''}
+                                                                                    onChange={(e) =>
+                                                                                        handleAssetParentChange(
+                                                                                            pouch.id,
+                                                                                            e.target.value
+                                                                                        )
+                                                                                    }
+                                                                                    className="vehicle-asset-select"
                                                                                 >
-                                                                                    {box.label}
-                                                                                </option>
-                                                                            ))}
-                                                                        </select>
-                                                                    ) : (
-                                                                        <span className="pill pill-soft">
-                                                                            {parentLabel}
-                                                                        </span>
-                                                                    )}
+                                                                                    <option value="">Unassigned</option>
+                                                                                    {drugBoxes.map((box) => (
+                                                                                        <option
+                                                                                            key={box.id}
+                                                                                            value={box.id}
+                                                                                        >
+                                                                                            {box.label}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            ) : (
+                                                                                <div className="vehicle-asset-value">
+                                                                                    {parentLabel}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        )
-                                                    })
+                                                            )
+                                                        })}
+                                                    </div>
                                                 )}
                                             </div>
 
