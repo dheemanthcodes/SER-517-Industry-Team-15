@@ -282,7 +282,7 @@ def build_snapshot():
     return ui_snapshot
 
 
-@app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full device details for device management page")
+@app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
 
@@ -364,19 +364,11 @@ def get_device_management_data():
 def get_paired_devices_map():
     snapshot = build_snapshot()
     result = {}
-    for veh in snapshot["vehicles"]:
-        pi = veh.get("pi_device")
-        if not pi:
-            continue
-        devices = [
-            {"name": asset["label"], "address": asset["ble_tag"]["identifier"]}
-            for asset in veh["assets"]
-            if asset["ble_tag"] is not None
-        ]
-        result[pi["id"]] = {
-            "ambulanceId": veh["unit_number"],
-            "ipAddress":   pi["ip_address"],
-            "devices":     devices,
+    for device_name, data in snapshot.items():
+        result[device_name] = {
+            "ambulanceId": data.get("ambulanceId"),
+            "ipAddress": data.get("ipAddress"),
+            "devices": data.get("devices", []),
         }
     return result
 
