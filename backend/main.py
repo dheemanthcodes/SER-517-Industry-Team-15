@@ -282,9 +282,82 @@ def build_snapshot():
     return ui_snapshot
 
 
-@app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full dashboard snapshot")
+@app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full device details for device management page")
 def get_dashboard():
     return build_snapshot()
+
+
+def build_device_management_payload():
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+
+    device_by_vehicle = {d.get("vehicle_id"): d for d in devices if d.get("vehicle_id")}
+    ble_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
+
+    vehicles_out = []
+    for veh in vehicles:
+        vid = veh.get("id")
+        if not vid:
+            continue
+
+        pi_device = device_by_vehicle.get(vid)
+        vehicle_assets = [a for a in assets if a.get("vehicle_id") == vid]
+
+        boxes = []
+        pouches = []
+        for asset in vehicle_assets:
+            asset_type = (asset.get("type") or "").upper()
+            tag = ble_by_asset.get(asset.get("id"))
+            payload = {
+                "asset_id": asset.get("id"),
+                "label": asset.get("label"),
+                "ble_mac_address": tag.get("identifier") if tag else None,
+                "parent_asset_id": asset.get("parent_asset_id"),
+            }
+
+            if asset_type == "BOX":
+                boxes.append(payload)
+            elif asset_type == "POUCH":
+                pouches.append(payload)
+
+        vehicles_out.append(
+            {
+                "vehicle_id": vid,
+                "ambulance_number": veh.get("unit_number"),
+                "station": veh.get("station_name"),
+                "raspberry_pi": {
+                    "id": pi_device.get("id"),
+                    "name": pi_device.get("device_name"),
+                    "ip_address": pi_device.get("ip_address"),
+                    "is_active": pi_device.get("is_active"),
+                }
+                if pi_device
+                else None,
+                "boxes": boxes,
+                "pouches": pouches,
+            }
+        )
+
+    return {"vehicles": vehicles_out}
+
+
+@app.get(
+    "/api/device-management",
+    tags=["Dashboard"],
+    summary="Get Device Management data",
+)
+def get_device_management_data():
+    try:
+        data = build_device_management_payload()
+        return {
+            "status": "success",
+            "source": "supabase",
+            "data": data,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch device management data: {str(e)}")
 
 
 @app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
