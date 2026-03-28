@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from supabase import create_client
 
 from pi_service import (
@@ -306,6 +307,117 @@ def build_snapshot():
 @app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
+
+
+@app.post("/api/updateambulance", tags=["Dashboard"], summary="Update an ambulance and its assets")
+def update_ambulance(payload: dict):
+    vehicle_id = payload.get("vehicle_id")
+    unit_number = (payload.get("unit_number") or "").strip()
+    station_name = (payload.get("station_name") or "").strip()
+    assets_payload = payload.get("assets", [])
+
+    if not vehicle_id:
+        raise HTTPException(status_code=400, detail="'vehicle_id' is required")
+    if not unit_number:
+        raise HTTPException(status_code=400, detail="'unit_number' is required")
+
+    try:
+        rpc_payload = {
+            "p_vehicle_id": vehicle_id,
+            "p_unit_number": unit_number,
+            "p_station_name": station_name,
+            "p_assets": [
+                {
+                    "id": a.get("id"),
+                    "type": a.get("type"),
+                    "label": a.get("label"),
+                    "ble_identifier": (a.get("ble_identifier") or "").strip(),
+                    "parent_asset_id": a.get("parent_asset_id"),
+                }
+                for a in assets_payload
+            ],
+        }
+
+        supabase.rpc("update_ambulance", rpc_payload).execute()
+
+        try:
+            supabase.table("alerts").insert(
+                {
+                    "asset_id": vehicle_id,
+                    "vehicle_id": vehicle_id,
+                    "status": "OPEN",
+                    "reason": f"Device updated: {unit_number}",
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).execute()
+        except Exception as alert_err:
+            print(f"[WARN] Failed to log audit alert: {alert_err}")
+
+        return {"status": "success", "message": "Ambulance updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class PiDetailsPayload(BaseModel):
+    name: str
+    ip_address: str
+    ambulance_id: str
+
+
+@app.post("/api/addpidetails", tags=["Pi Data"], summary="Add or update Raspberry Pi details")
+def add_pi_details(payload: PiDetailsPayload):
+    try:
+        name = payload.name.strip()
+        ip_address = payload.ip_address.strip()
+        ambulance_id = payload.ambulance_id.strip()
+
+        if not name or not ip_address or not ambulance_id:
+            raise HTTPException(status_code=400, detail="name, ip_address, and ambulance_id are required")
+
+        vehicle_response = (
+            supabase.table("vehicles")
+            .select("id, unit_number")
+            .eq("unit_number", ambulance_id)
+            .execute()
+        )
+
+        vehicles = vehicle_response.data or []
+        if not vehicles:
+            raise HTTPException(status_code=404, detail="Ambulance not found")
+
+        vehicle_id = vehicles[0]["id"]
+
+        device_response = (
+            supabase.table("devices")
+            .select("id, vehicle_id")
+            .eq("vehicle_id", vehicle_id)
+            .execute()
+        )
+
+        devices = device_response.data or []
+
+        if devices:
+            supabase.table("devices").update(
+                {"device_name": name, "ip_address": ip_address}
+            ).eq("vehicle_id", vehicle_id).execute()
+
+            return {"status": "success", "message": "Pi details updated successfully"}
+
+        supabase.table("devices").insert(
+            {
+                "device_name": name,
+                "ip_address": ip_address,
+                "vehicle_id": vehicle_id,
+                "is_active": True,
+            }
+        ).execute()
+
+        return {"status": "success", "message": "Pi details added successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def build_device_management_payload():
