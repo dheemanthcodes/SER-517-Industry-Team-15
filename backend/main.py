@@ -512,14 +512,59 @@ def build_device_management_payload():
     return {"vehicles": vehicles_out}
 
 
+def build_all_details_payload():
+    vehicles = supabase.table("vehicles").select("id, unit_number, station_name").execute().data or []
+    devices = supabase.table("devices").select("vehicle_id, device_name, ip_address").execute().data or []
+    assets = supabase.table("assets").select("id, vehicle_id, type, label").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("asset_id, identifier, tag_model").execute().data or []
+
+    vehicle_by_id = {vehicle.get("id"): vehicle for vehicle in vehicles if vehicle.get("id")}
+    device_by_vehicle_id = {
+        device.get("vehicle_id"): device for device in devices if device.get("vehicle_id")
+    }
+    ble_tag_by_asset_id = {
+        ble_tag.get("asset_id"): ble_tag for ble_tag in ble_tags if ble_tag.get("asset_id")
+    }
+
+    rows = []
+    for asset in assets:
+        vehicle_id = asset.get("vehicle_id")
+        asset_id = asset.get("id")
+
+        vehicle = vehicle_by_id.get(vehicle_id)
+        device = device_by_vehicle_id.get(vehicle_id)
+        ble_tag = ble_tag_by_asset_id.get(asset_id)
+
+        # Match the SQL's INNER JOIN behavior by only returning fully joined rows.
+        if not vehicle or not device or not ble_tag:
+            continue
+
+        rows.append(
+            {
+                "vehicle_id": vehicle.get("id"),
+                "unit_number": vehicle.get("unit_number"),
+                "station_name": vehicle.get("station_name"),
+                "device_name": device.get("device_name"),
+                "ip_address": device.get("ip_address"),
+                "asset_id": asset_id,
+                "asset_type": asset.get("type"),
+                "label": asset.get("label"),
+                "ble_identifier": ble_tag.get("identifier"),
+                "tag_model": ble_tag.get("tag_model"),
+            }
+        )
+
+    return rows
+
+
 @app.get(
-    "/api/device-management",
+    "/api/fetchalldetails",
     tags=["Dashboard"],
-    summary="Get Device Management data",
+    summary="Get flat vehicle, device, asset, and BLE tag details",
 )
-def get_device_management_data():
+def get_all_details():
     try:
-        data = build_device_management_payload()
+        data = build_all_details_payload()
         return {
             "status": "success",
             "source": "supabase",
@@ -529,7 +574,7 @@ def get_device_management_data():
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch device management data: {str(e)}",
+            detail=f"Failed to fetch all details: {str(e)}",
         )
 
 
