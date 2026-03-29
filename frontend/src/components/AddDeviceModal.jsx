@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
+import apiBase from '../apiBase'
 
 function AddDeviceModal({ show, onClose, onSuccess }) {
     const [loading, setLoading] = useState(false)
@@ -27,7 +28,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
         setPiLoadError('')
 
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/fetchpidetails`)
+            const res = await fetch(`${apiBase}/api/fetchpidetails`)
             const json = await res.json()
 
             const piList = Object.entries(json || {}).map(([piKey, piData]) => ({

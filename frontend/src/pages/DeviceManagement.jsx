@@ -2,6 +2,28 @@ import { useState, useEffect } from 'react'
 import { Button, Input } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
+import apiBase from '../apiBase'
+
+const normalizeDeviceManagementVehicle = (vehicle) => {
+    const boxes = Array.isArray(vehicle?.boxes) ? vehicle.boxes : []
+    const pouches = Array.isArray(vehicle?.pouches) ? vehicle.pouches : []
+
+    return {
+        id: vehicle?.vehicle_id,
+        unit_number: vehicle?.ambulance_number || '',
+        station_name: vehicle?.station || '',
+        raspberry_pi: vehicle?.raspberry_pi || null,
+        assets: [...boxes, ...pouches].map((asset, index) => ({
+            id: asset?.asset_id || `${vehicle?.vehicle_id || 'vehicle'}-asset-${index}`,
+            type: boxes.includes(asset) ? 'BOX' : 'POUCH',
+            label: asset?.label || '',
+            parent_asset_id: asset?.parent_asset_id || null,
+            ble_tag: {
+                identifier: asset?.ble_mac_address || ''
+            }
+        }))
+    }
+}
 
 function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
@@ -24,20 +46,15 @@ function DeviceManagement() {
             setFetchLoading(true)
             setError(null)
 
-            const { data, error: fetchError } = await supabase
-                .from('vehicles')
-                .select(`
-                    *,
-                    assets:assets(
-                        *,
-                        ble_tag:ble_tags(*)
-                    )
-                `)
-                .order('created_at', { ascending: false })
+            const res = await fetch(`${apiBase}/api/device-management`)
+            const json = await res.json()
 
-            if (fetchError) throw fetchError
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Failed to load vehicles')
+            }
 
-            setVehicles(data || [])
+            const backendVehicles = Array.isArray(json?.data?.vehicles) ? json.data.vehicles : []
+            setVehicles(backendVehicles.map(normalizeDeviceManagementVehicle))
         } catch (err) {
             console.error('Error fetching vehicles:', err)
             setError('Failed to load vehicles. Please try again.')
@@ -167,7 +184,7 @@ function DeviceManagement() {
                 }))
             }
 
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/updateambulance`, {
+            const res = await fetch(`${apiBase}/api/updateambulance`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -486,18 +503,32 @@ function DeviceManagement() {
                                                             )}
                                                         </div>
                                                     </div>
+
+                                                    <div className="vehicle-field">
+                                                        <div className="vehicle-field-label">Raspberry Pi</div>
+                                                        <div className="vehicle-field-value">
+                                                            {currentVehicle.raspberry_pi?.name || '—'}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="vehicle-field">
+                                                        <div className="vehicle-field-label">Pi IP Address</div>
+                                                        <div className="vehicle-field-value">
+                                                            {currentVehicle.raspberry_pi?.ip_address || '—'}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
 
                                             <div className="vehicle-section">
-                                                <div className="vehicle-section-label">DRUG BOXES</div>
+                                                <div className="vehicle-section-label">BOXES</div>
                                                 {drugBoxes.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No drug boxes configured for this ambulance.
+                                                        No boxes configured for this ambulance.
                                                     </div>
                                                 ) : (
                                                     <div className="vehicle-assets-grid">
-                                                        {drugBoxes.slice(0, 2).map((box, index) => (
+                                                        {drugBoxes.map((box, index) => (
                                                             <div key={box.id} className="vehicle-asset-card">
                                                                 <div className="vehicle-asset-header">
                                                                     <span className="vehicle-asset-icon">📦</span>
@@ -550,14 +581,14 @@ function DeviceManagement() {
                                             </div>
 
                                             <div className="vehicle-section">
-                                                <div className="vehicle-section-label">NARCOTICS POUCHES</div>
+                                                <div className="vehicle-section-label">POUCHES</div>
                                                 {pouches.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No narcotics pouches configured for this ambulance.
+                                                        No pouches configured for this ambulance.
                                                     </div>
                                                 ) : (
                                                     <div className="vehicle-assets-grid">
-                                                        {pouches.slice(0, 2).map((pouch, index) => {
+                                                        {pouches.map((pouch, index) => {
                                                             const parentLabel = pouch.parent_asset_id
                                                                 ? boxLabelById[pouch.parent_asset_id] ||
                                                                 'Unassigned'

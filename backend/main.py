@@ -1,15 +1,26 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+import os
+
+from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remove_device, scan_devices
 
 import os
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client
-from pydantic import BaseModel
+
+from pi_service import (
+    get_bluetooth_data,
+    get_paired_devices,
+    pair_device,
+    remove_device,
+    scan_devices,
+)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -34,6 +45,7 @@ app = FastAPI(
         {"name": "General", "description": "Basic health and welcome routes."},
         {"name": "Pi Data", "description": "Receive JSON data sent from a Raspberry Pi."},
         {"name": "Bluetooth", "description": "Manage Bluetooth scanning, pairing, and removal through the Pi."},
+{"name": "Dashboard", "description": "Dashboard and device management data endpoints."},
     ],
 )
 
@@ -205,61 +217,75 @@ def api_remove_device(payload: dict):
 
 
 def build_snapshot():
-    vehicles  = supabase.table("vehicles").select("*").execute().data
-    devices   = supabase.table("devices").select("*").execute().data
-    assets    = supabase.table("assets").select("*").execute().data
-    ble_tags  = supabase.table("ble_tags").select("*").execute().data
-    statuses  = supabase.table("asset_status").select("*").execute().data
-    alerts    = supabase.table("alerts").select("*").execute().data
+    vehicles  = supabase.table("vehicles").select("*").execute().data or []
+    devices   = supabase.table("devices").select("*").execute().data or []
+    assets    = supabase.table("assets").select("*").execute().data or []
+    ble_tags  = supabase.table("ble_tags").select("*").execute().data or []
+    statuses  = supabase.table("asset_status").select("*").execute().data or []
+    alerts    = supabase.table("alerts").select("*").execute().data or []
 
-    tag_by_asset    = {t["asset_id"]: t for t in ble_tags}
-    status_by_asset = {s["asset_id"]: s for s in statuses}
-    device_by_veh   = {d["vehicle_id"]: d for d in devices}
+    tag_by_asset    = {t["asset_id"]: t for t in ble_tags if t.get("asset_id")}
+    status_by_asset = {s["asset_id"]: s for s in statuses if s.get("asset_id")}
+    device_by_veh   = {d["vehicle_id"]: d for d in devices if d.get("vehicle_id")}
     alerts_by_veh   = {}
     for a in alerts:
-        alerts_by_veh.setdefault(a["vehicle_id"], []).append(a)
+        vehicle_id = a.get("vehicle_id")
+        if not vehicle_id:
+            continue
+        alerts_by_veh.setdefault(vehicle_id, []).append(a)
 
     ui_snapshot = {}
 
     for veh in vehicles:
-        vid = veh["id"]
+        vid = veh.get("id")
+        if not vid:
+            continue
         pi = device_by_veh.get(vid)
 
         assets_out = []
         for ast in assets:
-            if ast["vehicle_id"] != vid:
+            if ast.get("vehicle_id") != vid:
                 continue
 
-            tag = tag_by_asset.get(ast["id"])
-            status = status_by_asset.get(ast["id"])
+            ast_id = ast.get("id")
+            tag = tag_by_asset.get(ast_id)
+            status = status_by_asset.get(ast_id)
 
-            assets_out.append({
-                "id": ast["id"],
-                "type": ast["type"],
-                "label": ast["label"],
-                "parent_asset_id": ast["parent_asset_id"],
-                "ble_tag": {
-                    "identifier": tag["identifier"],
-                    "tag_model": tag["tag_model"],
-                    "asset_id": tag["asset_id"],
-                } if tag else None,
-                "status": {
-                    "state": status["state"],
-                    "last_seen_at": status["last_seen_at"],
-                    "last_rssi": status["last_rssi"],
-                } if status else None,
-            })
+            assets_out.append(
+                {
+                    "id": ast.get("id"),
+                    "type": ast.get("type"),
+                    "label": ast.get("label"),
+                    "parent_asset_id": ast.get("parent_asset_id"),
+                    "ble_tag": {
+                        "identifier": tag.get("identifier"),
+                        "tag_model": tag.get("tag_model"),
+                        "asset_id": tag.get("asset_id"),
+                    }
+                    if tag
+                    else None,
+                    "status": {
+                        "state": status.get("state"),
+                        "last_seen_at": status.get("last_seen_at"),
+                        "last_rssi": status.get("last_rssi"),
+                    }
+                    if status
+                    else None,
+                }
+            )
 
         vehicle_snapshot = {
-            "id": veh["id"],
-            "unit_number": veh["unit_number"],
-            "station_name": veh["station_name"],
+            "id": veh.get("id"),
+            "unit_number": veh.get("unit_number"),
+            "station_name": veh.get("station_name"),
             "pi_device": {
-                "id": pi["id"],
-                "device_name": pi["device_name"],
-                "ip_address": pi["ip_address"],
-                "is_active": pi["is_active"],
-            } if pi else None,
+                "id": pi.get("id"),
+                "device_name": pi.get("device_name"),
+                "ip_address": pi.get("ip_address"),
+                "is_active": pi.get("is_active"),
+            }
+            if pi
+	    else None,
             "assets": assets_out,
             "alerts": alerts_by_veh.get(vid, []),
         }
@@ -293,7 +319,7 @@ def update_ambulance(payload: dict):
     vehicle_id  = payload.get("vehicle_id")
     unit_number = (payload.get("unit_number") or "").strip()
     station_name = (payload.get("station_name") or "").strip()
-    assets = payload.get("assets", [])
+    assets_payload = payload.get("assets", [])
 
     if not vehicle_id:
         raise HTTPException(status_code=400, detail="'vehicle_id' is required")
@@ -313,20 +339,22 @@ def update_ambulance(payload: dict):
                     "ble_identifier": (a.get("ble_identifier") or "").strip(),
                     "parent_asset_id": a.get("parent_asset_id"),
                 }
-                for a in assets
+                for a in assets_payload
             ],
         }
 
         result = supabase.rpc("update_ambulance", rpc_payload).execute()
 
         try:
-            supabase.table("alerts").insert({
+            supabase.table("alerts").insert(
+	    {
                 "asset_id":   vehicle_id,
                 "vehicle_id": vehicle_id,
                 "status":     "OPEN",
                 "reason":     f"Device updated: {unit_number}",
                 "opened_at":  datetime.now(timezone.utc).isoformat(),
-            }).execute()
+		}
+	    ).execute()
         except Exception as alert_err:
             print(f"[WARN] Failed to log audit alert: {alert_err}")
 
@@ -378,7 +406,7 @@ def add_pi_details(payload: PiDetailsPayload):
             .execute()
         )
 
-        vehicles = vehicle_response.data
+        vehicles = vehicle_response.data or []
         if not vehicles:
             raise HTTPException(status_code=404, detail="Ambulance not found")
 
@@ -391,7 +419,7 @@ def add_pi_details(payload: PiDetailsPayload):
             .execute()
         )
 
-        devices = device_response.data
+        devices = device_response.data or []
 
         if devices:
             updated_device = (
@@ -409,21 +437,16 @@ def add_pi_details(payload: PiDetailsPayload):
                 "message": "Pi details updated successfully",
             }
 
-        inserted_device = (
-            supabase.table("devices")
-            .insert({
+        supabase.table("devices").insert(
+            {
                 "device_name": name,
                 "ip_address": ip_address,
                 "vehicle_id": vehicle_id,
                 "is_active": True,
-            })
-            .execute()
-        )
+            }
+        ).execute()
 
-        return {
-            "status": "success",
-            "message": "Pi details added successfully",
-        }
+        return {"status": "success", "message": "Pi details added successfully"}
 
     except HTTPException:
         raise
@@ -431,6 +454,100 @@ def add_pi_details(payload: PiDetailsPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def build_device_management_payload():
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+
+    device_by_vehicle = {d.get("vehicle_id"): d for d in devices if d.get("vehicle_id")}
+    ble_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
+
+    vehicles_out = []
+    for veh in vehicles:
+        vid = veh.get("id")
+        if not vid:
+            continue
+
+        pi_device = device_by_vehicle.get(vid)
+        vehicle_assets = [a for a in assets if a.get("vehicle_id") == vid]
+
+        boxes = []
+        pouches = []
+
+        for asset in vehicle_assets:
+            asset_type = (asset.get("type") or "").upper()
+            tag = ble_by_asset.get(asset.get("id"))
+
+            payload = {
+                "asset_id": asset.get("id"),
+                "label": asset.get("label"),
+                "ble_mac_address": tag.get("identifier") if tag else None,
+                "parent_asset_id": asset.get("parent_asset_id"),
+            }
+
+            if asset_type == "BOX":
+                boxes.append(payload)
+            elif asset_type == "POUCH":
+                pouches.append(payload)
+
+        vehicles_out.append(
+            {
+                "vehicle_id": vid,
+                "ambulance_number": veh.get("unit_number"),
+                "station": veh.get("station_name"),
+                "raspberry_pi": {
+                    "id": pi_device.get("id"),
+                    "name": pi_device.get("device_name"),
+                    "ip_address": pi_device.get("ip_address"),
+                    "is_active": pi_device.get("is_active"),
+                }
+                if pi_device
+                else None,
+                "boxes": boxes,
+                "pouches": pouches,
+            }
+        )
+
+    return {"vehicles": vehicles_out}
+
+
+@app.get(
+    "/api/device-management",
+    tags=["Dashboard"],
+    summary="Get Device Management data",
+)
+def get_device_management_data():
+    try:
+        data = build_device_management_payload()
+        return {
+            "status": "success",
+            "source": "supabase",
+            "data": data,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch device management data: {str(e)}",
+        )
+
+
+@app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
+def get_paired_devices_map():
+    snapshot = build_snapshot()
+    result = {}
+
+    for device_name, data in snapshot.items():
+        result[device_name] = {
+            "ambulanceId": data.get("ambulanceId"),
+            "ipAddress": data.get("ipAddress"),
+            "devices": data.get("devices", []),
+        }
+
+    return result
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    

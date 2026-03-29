@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import './RaspberryPiConfig.css'
+import apiBase from '../apiBase'
 
 function RaspberryPiConfig() {
     // pis is an array derived from the backend response object
@@ -49,7 +50,7 @@ function RaspberryPiConfig() {
      */
     const fetchPiDetails = async () => {
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/fetchpidetails`)
+            const res = await fetch(`${apiBase}/api/fetchpidetails`)
             const json = await res.json()
 
             // Convert the keyed object into an array for easier rendering
@@ -74,7 +75,7 @@ function RaspberryPiConfig() {
 
         setAddPiMessage('Adding...')
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/addpidetails`, {
+            const res = await fetch(`${apiBase}/api/addpidetails`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -124,7 +125,7 @@ function RaspberryPiConfig() {
 
     const fetchPaired = async () => {
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/paired?pi_ip=${selectedPi?.ipAddress || ''}`)
+            const res = await fetch(`${apiBase}/api/bluetooth/paired?pi_ip=${selectedPi?.ipAddress || ''}`)
             const json = await res.json()
             if (json.status === 'success') setPaired(json.data.paired_devices || [])
         } catch (e) {
@@ -136,7 +137,7 @@ function RaspberryPiConfig() {
         setScanning(true)
         setMessage('Scanning for devices...')
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/scan?seconds=6&pi_ip=${selectedPi?.ipAddress || ''}`)
+            const res = await fetch(`${apiBase}/api/bluetooth/scan?seconds=6&pi_ip=${selectedPi?.ipAddress || ''}`)
             let json
             try {
                 json = await res.json()
@@ -168,7 +169,7 @@ function RaspberryPiConfig() {
     const handlePair = async (mac) => {
         setMessage(`Pairing ${mac}...`)
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/pair`, {
+            const res = await fetch(`${apiBase}/api/bluetooth/pair`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' })
@@ -189,7 +190,7 @@ function RaspberryPiConfig() {
     const handleRemove = async (mac) => {
         setMessage(`Removing ${mac}...`)
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/remove`, {
+            const res = await fetch(`${apiBase}/api/bluetooth/remove`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' })
