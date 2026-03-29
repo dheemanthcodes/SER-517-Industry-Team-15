@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+import hashlib
 import os
+import secrets
 
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -25,10 +27,11 @@ from pi_service import (
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 SUPABASE_URL = os.getenv("supabase_url")
-SUPABASE_KEY = os.getenv("supabase_anonkey")
+# Server-side writes should use service role key (falls back to anon for local/dev only).
+SUPABASE_KEY = os.getenv("supabase_service_role_key") or os.getenv("supabase_anonkey")
 
-print("URL:", SUPABASE_URL)
-print("KEY:", SUPABASE_KEY)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing Supabase credentials: set supabase_url and supabase_service_role_key")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -217,93 +220,48 @@ def api_remove_device(payload: dict):
 
 
 def build_snapshot():
-    vehicles  = supabase.table("vehicles").select("*").execute().data or []
-    devices   = supabase.table("devices").select("*").execute().data or []
-    assets    = supabase.table("assets").select("*").execute().data or []
-    ble_tags  = supabase.table("ble_tags").select("*").execute().data or []
-    statuses  = supabase.table("asset_status").select("*").execute().data or []
-    alerts    = supabase.table("alerts").select("*").execute().data or []
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
 
-    tag_by_asset    = {t["asset_id"]: t for t in ble_tags if t.get("asset_id")}
-    status_by_asset = {s["asset_id"]: s for s in statuses if s.get("asset_id")}
-    device_by_veh   = {d["vehicle_id"]: d for d in devices if d.get("vehicle_id")}
-    alerts_by_veh   = {}
-    for a in alerts:
-        vehicle_id = a.get("vehicle_id")
+    vehicle_by_id = {v.get("id"): v for v in vehicles if v.get("id")}
+    tag_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
+    assets_by_vehicle = {}
+
+    for asset in assets:
+        vehicle_id = asset.get("vehicle_id")
         if not vehicle_id:
             continue
-        alerts_by_veh.setdefault(vehicle_id, []).append(a)
+        assets_by_vehicle.setdefault(vehicle_id, []).append(asset)
 
     ui_snapshot = {}
 
-    for veh in vehicles:
-        vid = veh.get("id")
-        if not vid:
+    for device in devices:
+        device_name = (device.get("device_name") or "").strip()
+        if not device_name:
             continue
-        pi = device_by_veh.get(vid)
 
-        assets_out = []
-        for ast in assets:
-            if ast.get("vehicle_id") != vid:
+        vehicle_id = device.get("vehicle_id")
+        vehicle = vehicle_by_id.get(vehicle_id) if vehicle_id else None
+        vehicle_assets = assets_by_vehicle.get(vehicle_id, []) if vehicle_id else []
+
+        tracked_devices = []
+        for asset in vehicle_assets:
+            tag = tag_by_asset.get(asset.get("id"))
+            if not tag:
                 continue
-
-            ast_id = ast.get("id")
-            tag = tag_by_asset.get(ast_id)
-            status = status_by_asset.get(ast_id)
-
-            assets_out.append(
+            tracked_devices.append(
                 {
-                    "id": ast.get("id"),
-                    "type": ast.get("type"),
-                    "label": ast.get("label"),
-                    "parent_asset_id": ast.get("parent_asset_id"),
-                    "ble_tag": {
-                        "identifier": tag.get("identifier"),
-                        "tag_model": tag.get("tag_model"),
-                        "asset_id": tag.get("asset_id"),
-                    }
-                    if tag
-                    else None,
-                    "status": {
-                        "state": status.get("state"),
-                        "last_seen_at": status.get("last_seen_at"),
-                        "last_rssi": status.get("last_rssi"),
-                    }
-                    if status
-                    else None,
+                    "name": asset.get("label") or tag.get("asset_id"),
+                    "address": tag.get("identifier"),
                 }
             )
 
-        vehicle_snapshot = {
-            "id": veh.get("id"),
-            "unit_number": veh.get("unit_number"),
-            "station_name": veh.get("station_name"),
-            "pi_device": {
-                "id": pi.get("id"),
-                "device_name": pi.get("device_name"),
-                "ip_address": pi.get("ip_address"),
-                "is_active": pi.get("is_active"),
-            }
-            if pi
-	    else None,
-            "assets": assets_out,
-            "alerts": alerts_by_veh.get(vid, []),
-        }
-
-        if not pi:
-            continue
-
-        ui_snapshot[pi["device_name"]] = {
-            "ambulanceId": vehicle_snapshot["unit_number"],
-            "ipAddress": vehicle_snapshot["pi_device"]["ip_address"],
-            "devices": [
-                {
-                    "name": asset["ble_tag"]["asset_id"],
-                    "address": asset["ble_tag"]["identifier"],
-                }
-                for asset in vehicle_snapshot["assets"]
-                if asset["ble_tag"]
-            ],
+        ui_snapshot[device_name] = {
+            "ambulanceId": vehicle.get("unit_number") if vehicle else None,
+            "ipAddress": device.get("ip_address"),
+            "devices": tracked_devices,
         }
 
     return ui_snapshot
@@ -387,50 +345,32 @@ def get_paired_devices_map():
 class PiDetailsPayload(BaseModel):
     name: str
     ip_address: str
-    ambulance_id: str
 
 @app.post("/api/addpidetails", tags=["Pi Data"], summary="Add or update Raspberry Pi details")
 def add_pi_details(payload: PiDetailsPayload):
     try:
         name = payload.name.strip()
         ip_address = payload.ip_address.strip()
-        ambulance_id = payload.ambulance_id.strip()
 
-        if not name or not ip_address or not ambulance_id:
-            raise HTTPException(status_code=400, detail="name, ip_address, and ambulance_id are required")
-
-        vehicle_response = (
-            supabase.table("vehicles")
-            .select("id, unit_number")
-            .eq("unit_number", ambulance_id)
-            .execute()
-        )
-
-        vehicles = vehicle_response.data or []
-        if not vehicles:
-            raise HTTPException(status_code=404, detail="Ambulance not found")
-
-        vehicle_id = vehicles[0]["id"]
+        if not name or not ip_address:
+            raise HTTPException(status_code=400, detail="name and ip_address are required")
 
         device_response = (
             supabase.table("devices")
-            .select("id, vehicle_id")
-            .eq("vehicle_id", vehicle_id)
+            .select("id")
+            .eq("device_name", name)
             .execute()
         )
 
         devices = device_response.data or []
 
         if devices:
-            updated_device = (
-                        supabase.table("devices")
-                        .update({
-                            "device_name": name,
-                            "ip_address": ip_address,
-                        })
-                        .eq("vehicle_id", vehicle_id)
-                        .execute()
-                    )
+            supabase.table("devices").update(
+                {
+                    "ip_address": ip_address,
+                    "is_active": True,
+                }
+            ).eq("device_name", name).execute()
 
             return {
                 "status": "success",
@@ -441,7 +381,8 @@ def add_pi_details(payload: PiDetailsPayload):
             {
                 "device_name": name,
                 "ip_address": ip_address,
-                "vehicle_id": vehicle_id,
+                "vehicle_id": None,
+                "api_key_hash": hashlib.sha256(secrets.token_urlsafe(32).encode("utf-8")).hexdigest(),
                 "is_active": True,
             }
         ).execute()

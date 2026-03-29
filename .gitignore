@@ -47,3 +47,4 @@ config.yaml
 *.local.yaml
 .npmrc
 package-lock.json
+*.timestamp-*.mjs
