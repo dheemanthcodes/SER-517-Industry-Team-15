@@ -4,25 +4,40 @@ import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
 import apiBase from '../apiBase'
 
-const normalizeDeviceManagementVehicle = (vehicle) => {
-    const boxes = Array.isArray(vehicle?.boxes) ? vehicle.boxes : []
-    const pouches = Array.isArray(vehicle?.pouches) ? vehicle.pouches : []
+const normalizeAllDetailsRows = (rows) => {
+    const vehiclesById = new Map()
 
-    return {
-        id: vehicle?.vehicle_id,
-        unit_number: vehicle?.ambulance_number || '',
-        station_name: vehicle?.station || '',
-        raspberry_pi: vehicle?.raspberry_pi || null,
-        assets: [...boxes, ...pouches].map((asset, index) => ({
-            id: asset?.asset_id || `${vehicle?.vehicle_id || 'vehicle'}-asset-${index}`,
-            type: boxes.includes(asset) ? 'BOX' : 'POUCH',
-            label: asset?.label || '',
-            parent_asset_id: asset?.parent_asset_id || null,
+    for (const row of Array.isArray(rows) ? rows : []) {
+        const vehicleId = row?.vehicle_id
+        if (!vehicleId) continue
+
+        if (!vehiclesById.has(vehicleId)) {
+            vehiclesById.set(vehicleId, {
+                id: vehicleId,
+                unit_number: row?.unit_number || '',
+                station_name: row?.station_name || '',
+                raspberry_pi: {
+                    name: row?.device_name || '',
+                    ip_address: row?.ip_address || ''
+                },
+                assets: []
+            })
+        }
+
+        const vehicle = vehiclesById.get(vehicleId)
+        vehicle.assets.push({
+            id: row?.asset_id || `${vehicleId}-asset-${vehicle.assets.length}`,
+            type: row?.asset_type || '',
+            label: row?.label || '',
+            parent_asset_id: row?.parent_asset_id || null,
             ble_tag: {
-                identifier: asset?.ble_mac_address || ''
+                identifier: row?.ble_identifier || '',
+                tag_model: row?.tag_model || ''
             }
-        }))
+        })
     }
+
+    return Array.from(vehiclesById.values())
 }
 
 function DeviceManagement() {
@@ -46,15 +61,15 @@ function DeviceManagement() {
             setFetchLoading(true)
             setError(null)
 
-            const res = await fetch(`${apiBase}/api/device-management`)
+            const res = await fetch(`${apiBase}/api/fetchalldetails`)
             const json = await res.json()
 
             if (!res.ok) {
                 throw new Error(json.detail || json.message || 'Failed to load vehicles')
             }
 
-            const backendVehicles = Array.isArray(json?.data?.vehicles) ? json.data.vehicles : []
-            setVehicles(backendVehicles.map(normalizeDeviceManagementVehicle))
+            const backendRows = Array.isArray(json?.data) ? json.data : []
+            setVehicles(normalizeAllDetailsRows(backendRows))
         } catch (err) {
             console.error('Error fetching vehicles:', err)
             setError('Failed to load vehicles. Please try again.')
@@ -573,6 +588,12 @@ function DeviceManagement() {
                                                                             </div>
                                                                         )}
                                                                     </div>
+                                                                    <div className="vehicle-asset-field">
+                                                                        <div className="vehicle-asset-label">Tag Model</div>
+                                                                        <div className="vehicle-asset-value">
+                                                                            {box.ble_tag?.tag_model || '—'}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -638,6 +659,12 @@ function DeviceManagement() {
                                                                                     {pouch.ble_tag?.identifier}
                                                                                 </div>
                                                                             )}
+                                                                        </div>
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">Tag Model</div>
+                                                                            <div className="vehicle-asset-value">
+                                                                                {pouch.ble_tag?.tag_model || '—'}
+                                                                            </div>
                                                                         </div>
                                                                         <div className="vehicle-asset-field">
                                                                             <div className="vehicle-asset-label">Assigned to</div>
