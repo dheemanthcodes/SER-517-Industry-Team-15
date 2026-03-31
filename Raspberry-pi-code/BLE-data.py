@@ -1,10 +1,17 @@
 import asyncio
 import json
+import os
 from datetime import datetime, timezone
+from urllib import error, request
 
 from bleak import BleakScanner
 
 TARGET_MAC = "C3:00:00:61:15:B5"
+BACKEND_PI_DATA_URL = os.getenv("BACKEND_PI_DATA_URL", "http://192.168.1.50:8000/api/pi/data")
+PI_DEVICE_ID = os.getenv("PI_DEVICE_ID", "pi-001")
+BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "60"))
+
+pending_results = []
 
 
 def now_iso():
@@ -67,7 +74,7 @@ def extract_short_uuid_from_service_key(service_uuid_str):
     if not s.startswith("0000") or len(s) < 8:
         return None
 
-    little_endian_16 = s[4:8]   # e.g. c5e2
+    little_endian_16 = s[4:8]
     if len(little_endian_16) != 4:
         return None
 
@@ -81,7 +88,6 @@ def parse_minew_fake_ibeacon(service_data):
     for service_uuid, payload in service_data.items():
         service_uuid_str = str(service_uuid).lower()
 
-        # We only know how to parse the Minew compressed UUID layout if payload is exactly 20 bytes
         if len(payload) != 20:
             continue
 
@@ -117,7 +123,6 @@ def extract_battery_level(service_data):
     if not parsed:
         return None
 
-    # Return first valid battery value
     for frame in parsed:
         battery = frame.get("battery_level")
         if battery is not None:
@@ -126,10 +131,7 @@ def extract_battery_level(service_data):
     return None
 
 
-def detection_callback(device, advertisement_data):
-    if device.address.upper() != TARGET_MAC:
-        return
-
+def build_result(device, advertisement_data):
     manufacturer_data = advertisement_data.manufacturer_data or {}
     service_data = advertisement_data.service_data or {}
 
@@ -137,7 +139,8 @@ def detection_callback(device, advertisement_data):
     minew_fake_ibeacon = parse_minew_fake_ibeacon(service_data)
     battery_level = extract_battery_level(service_data)
 
-    result = {
+    return {
+        "device_id": PI_DEVICE_ID,
         "address": device.address,
         "name": device.name or advertisement_data.local_name,
         "rssi": advertisement_data.rssi,
@@ -150,18 +153,74 @@ def detection_callback(device, advertisement_data):
         "minew_fake_ibeacon": minew_fake_ibeacon
     }
 
+
+def detection_callback(device, advertisement_data):
+    if device.address.upper() != TARGET_MAC:
+        return
+
+    result = build_result(device, advertisement_data)
+    pending_results.append(result)
+
     print(json.dumps(result, indent=2))
+    print(f"Queued records: {len(pending_results)}")
     print("-" * 60)
 
 
+def post_batch(batch):
+    payload = json.dumps({
+        "device_id": PI_DEVICE_ID,
+        "sent_at": now_iso(),
+        "records": batch,
+    }).encode("utf-8")
+
+    http_request = request.Request(
+        BACKEND_PI_DATA_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with request.urlopen(http_request, timeout=15) as response:
+        return response.status, response.read().decode("utf-8")
+
+
+async def flush_batches_periodically():
+    while True:
+        await asyncio.sleep(BATCH_INTERVAL_SECONDS)
+
+        if not pending_results:
+            continue
+
+        batch = list(pending_results)
+
+        try:
+            status, response_body = await asyncio.to_thread(post_batch, batch)
+            del pending_results[:len(batch)]
+            print(f"Sent batch with {len(batch)} records to backend. Status: {status}")
+            print(response_body)
+        except error.URLError as exc:
+            print(f"Failed to send batch to backend: {exc}")
+        except Exception as exc:
+            print(f"Unexpected error sending batch: {exc}")
+
+
 async def main():
-    print(f"Scanning for beacon {TARGET_MAC} for 30 seconds...\n")
+    print(f"Scanning continuously for beacon {TARGET_MAC}")
+    print(f"Batch upload target: {BACKEND_PI_DATA_URL}")
+    print(f"Batch interval: {BATCH_INTERVAL_SECONDS} seconds\n")
+
     scanner = BleakScanner(detection_callback)
+    flush_task = asyncio.create_task(flush_batches_periodically())
 
     async with scanner:
-        await asyncio.sleep(30)
-
-    print("\nScan finished.")
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            print("\nStopping scan...")
+        finally:
+            flush_task.cancel()
+            await asyncio.gather(flush_task, return_exceptions=True)
 
 
 if __name__ == "__main__":
