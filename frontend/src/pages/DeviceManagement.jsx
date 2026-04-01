@@ -44,6 +44,10 @@ function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
 
     const [vehicles, setVehicles] = useState([])
+    const [allPis, setAllPis] = useState([])
+    const [availablePis, setAvailablePis] = useState([])
+    const [piLoading, setPiLoading] = useState(false)
+    const [piLoadError, setPiLoadError] = useState('')
     const [expandedVehicle, setExpandedVehicle] = useState(null)
     const [fetchLoading, setFetchLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -54,6 +58,7 @@ function DeviceManagement() {
 
     useEffect(() => {
         fetchVehicles()
+        fetchPiDetails()
     }, [])
 
     const fetchVehicles = async () => {
@@ -78,6 +83,38 @@ function DeviceManagement() {
         }
     }
 
+    const fetchPiDetails = async () => {
+        try {
+            setPiLoading(true)
+            setPiLoadError('')
+
+            const res = await fetch(`${apiBase}/api/fetchpidetails`)
+            const json = await res.json()
+
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Failed to load Raspberry Pi options')
+            }
+
+            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
+                piKey,
+                ambulanceId: piData?.ambulanceId || '',
+                ipAddress: piData?.ipAddress || '',
+                devices: Array.isArray(piData?.devices) ? piData.devices : []
+            }))
+
+            setAllPis(piList)
+            const unassignedPis = piList.filter((pi) => !pi.ambulanceId)
+            setAvailablePis(unassignedPis)
+        } catch (err) {
+            console.error('Failed to load Raspberry Pi options:', err)
+            setPiLoadError('Failed to load Raspberry Pi options.')
+            setAllPis([])
+            setAvailablePis([])
+        } finally {
+            setPiLoading(false)
+        }
+    }
+
     const toggleVehicle = (vehicleId) => {
         setExpandedVehicle(expandedVehicle === vehicleId ? null : vehicleId)
     }
@@ -99,6 +136,48 @@ function DeviceManagement() {
             return {
                 ...prev,
                 [field]: value
+            }
+        })
+    }
+
+    const handleRaspberryPiChange = (piKey) => {
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+
+            const selectedPi = allPis.find((pi) => pi.piKey === piKey)
+
+            if (!selectedPi) {
+                return {
+                    ...prev,
+                    raspberry_pi: {
+                        ...(prev.raspberry_pi || {}),
+                        name: '',
+                        ip_address: ''
+                    },
+                    assets: (prev.assets || []).map((asset) => ({
+                        ...asset,
+                        ble_tag: {
+                            ...(asset.ble_tag || {}),
+                            identifier: ''
+                        }
+                    }))
+                }
+            }
+
+            return {
+                ...prev,
+                raspberry_pi: {
+                    ...(prev.raspberry_pi || {}),
+                    name: selectedPi.piKey,
+                    ip_address: selectedPi.ipAddress || ''
+                },
+                assets: (prev.assets || []).map((asset) => ({
+                    ...asset,
+                    ble_tag: {
+                        ...(asset.ble_tag || {}),
+                        identifier: ''
+                    }
+                }))
             }
         })
     }
@@ -413,6 +492,32 @@ function DeviceManagement() {
                                 return acc
                             }, {})
 
+                            const raspberryPiOptions = [
+                                ...(currentVehicle.raspberry_pi?.name
+                                    ? [
+                                        {
+                                            piKey: currentVehicle.raspberry_pi.name,
+                                            ipAddress: currentVehicle.raspberry_pi.ip_address || ''
+                                        }
+                                    ]
+                                    : []),
+                                ...availablePis.filter(
+                                    (pi) => pi.piKey !== currentVehicle.raspberry_pi?.name
+                                )
+                            ]
+                            const selectedEditPi = allPis.find(
+                                (pi) => pi.piKey === currentVehicle.raspberry_pi?.name
+                            )
+                            const selectedEditPiDevices = Array.isArray(selectedEditPi?.devices)
+                                ? selectedEditPi.devices
+                                : []
+                            const getBleOptionsForType = (assetType) =>
+                                selectedEditPiDevices.filter((device) =>
+                                    (device.name || '').toLowerCase().includes(
+                                        assetType === 'BOX' ? 'box' : 'pouch'
+                                    )
+                                )
+
                             return (
                                 <div key={vehicle.id} className="vehicle-card">
                                     <div
@@ -522,18 +627,60 @@ function DeviceManagement() {
                                                     <div className="vehicle-field">
                                                         <div className="vehicle-field-label">Raspberry Pi</div>
                                                         <div className="vehicle-field-value">
-                                                            {currentVehicle.raspberry_pi?.name || '—'}
+                                                            {isEditing ? (
+                                                                <select
+                                                                    value={currentVehicle.raspberry_pi?.name || ''}
+                                                                    onChange={(e) =>
+                                                                        handleRaspberryPiChange(
+                                                                            e.target.value
+                                                                        )
+                                                                    }
+                                                                    className="vehicle-asset-select"
+                                                                    disabled={piLoading}
+                                                                >
+                                                                    <option value="">
+                                                                        {piLoading
+                                                                            ? 'Loading Raspberry Pis...'
+                                                                            : 'Select Raspberry Pi'}
+                                                                    </option>
+                                                                    {raspberryPiOptions.map((pi) => (
+                                                                        <option key={pi.piKey} value={pi.piKey}>
+                                                                            {pi.piKey}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            ) : (
+                                                                currentVehicle.raspberry_pi?.name || '—'
+                                                            )}
                                                         </div>
                                                     </div>
 
                                                     <div className="vehicle-field">
                                                         <div className="vehicle-field-label">Pi IP Address</div>
                                                         <div className="vehicle-field-value">
-                                                            {currentVehicle.raspberry_pi?.ip_address || '—'}
+                                                            {isEditing ? (
+                                                                <div className="vehicle-asset-value">
+                                                                    {currentVehicle.raspberry_pi?.ip_address || '—'}
+                                                                </div>
+                                                            ) : (
+                                                                currentVehicle.raspberry_pi?.ip_address || '—'
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {isEditing && piLoadError && (
+                                                <div
+                                                    style={{
+                                                        color: '#b91c1c',
+                                                        fontSize: '13px',
+                                                        marginTop: '8px'
+                                                    }}
+                                                >
+                                                    {piLoadError}
+                                                </div>
+                                            )}
 
                                             <div className="vehicle-section">
                                                 <div className="vehicle-section-label">BOXES</div>
@@ -573,7 +720,7 @@ function DeviceManagement() {
                                                                     <div className="vehicle-asset-field">
                                                                         <div className="vehicle-asset-label">BLE Identifier</div>
                                                                         {isEditing ? (
-                                                                            <Input
+                                                                            <select
                                                                                 value={box.ble_tag?.identifier || ''}
                                                                                 onChange={(e) =>
                                                                                     handleAssetBleChange(
@@ -581,7 +728,22 @@ function DeviceManagement() {
                                                                                         e.target.value
                                                                                     )
                                                                                 }
-                                                                            />
+                                                                                className="vehicle-asset-select"
+                                                                            >
+                                                                                <option value="">
+                                                                                    Select device address
+                                                                                </option>
+                                                                                {getBleOptionsForType('BOX').map(
+                                                                                    (device, deviceIndex) => (
+                                                                                        <option
+                                                                                            key={`${device.address || 'box'}-${deviceIndex}`}
+                                                                                            value={device.address || ''}
+                                                                                        >
+                                                                                            {device.address || 'No address'}
+                                                                                        </option>
+                                                                                    )
+                                                                                )}
+                                                                            </select>
                                                                         ) : (
                                                                             <div className="vehicle-asset-ble">
                                                                                 {box.ble_tag?.identifier}
@@ -645,7 +807,7 @@ function DeviceManagement() {
                                                                         <div className="vehicle-asset-field">
                                                                             <div className="vehicle-asset-label">BLE Identifier</div>
                                                                             {isEditing ? (
-                                                                                <Input
+                                                                                <select
                                                                                     value={pouch.ble_tag?.identifier || ''}
                                                                                     onChange={(e) =>
                                                                                         handleAssetBleChange(
@@ -653,7 +815,22 @@ function DeviceManagement() {
                                                                                             e.target.value
                                                                                         )
                                                                                     }
-                                                                                />
+                                                                                    className="vehicle-asset-select"
+                                                                                >
+                                                                                    <option value="">
+                                                                                        Select device address
+                                                                                    </option>
+                                                                                    {getBleOptionsForType('POUCH').map(
+                                                                                        (device, deviceIndex) => (
+                                                                                            <option
+                                                                                                key={`${device.address || 'pouch'}-${deviceIndex}`}
+                                                                                                value={device.address || ''}
+                                                                                            >
+                                                                                                {device.address || 'No address'}
+                                                                                            </option>
+                                                                                        )
+                                                                                    )}
+                                                                                </select>
                                                                             ) : (
                                                                                 <div className="vehicle-asset-ble">
                                                                                     {pouch.ble_tag?.identifier}
@@ -746,6 +923,10 @@ function DeviceManagement() {
                     show={showAddDeviceModal}
                     onClose={() => setShowAddDeviceModal(false)}
                     onSuccess={handleRegisterAmbulance}
+                    availablePis={availablePis}
+                    piLoading={piLoading}
+                    piLoadError={piLoadError}
+                    onRefreshPis={fetchPiDetails}
                 />
             </div>
         </div>

@@ -3,7 +3,15 @@ import { Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 import apiBase from '../apiBase'
 
-function AddDeviceModal({ show, onClose, onSuccess }) {
+function AddDeviceModal({
+    show,
+    onClose,
+    onSuccess,
+    availablePis: preloadedPis = [],
+    piLoading: preloadedPiLoading = false,
+    piLoadError: preloadedPiLoadError = '',
+    onRefreshPis
+}) {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [deviceForm, setDeviceForm] = useState({
@@ -19,9 +27,9 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
         narcoticsPouch2BleId: ''
     })
     
-    const [availablePis, setAvailablePis] = useState([])
-    const [piLoading, setPiLoading] = useState(false)
-    const [piLoadError, setPiLoadError] = useState('')
+    const [availablePis, setAvailablePis] = useState(preloadedPis)
+    const [piLoading, setPiLoading] = useState(preloadedPiLoading)
+    const [piLoadError, setPiLoadError] = useState(preloadedPiLoadError)
 
     const loadAvailablePis = async () => {
         setPiLoading(true)
@@ -50,10 +58,18 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
     }
 
     useEffect(() => {
-        if (show) {
+        setAvailablePis(preloadedPis)
+        setPiLoading(preloadedPiLoading)
+        setPiLoadError(preloadedPiLoadError)
+    }, [preloadedPis, preloadedPiLoading, preloadedPiLoadError])
+
+    useEffect(() => {
+        if (show && preloadedPis.length === 0 && onRefreshPis) {
+            onRefreshPis()
+        } else if (show && preloadedPis.length === 0) {
             loadAvailablePis()
         }
-    }, [show])
+    }, [show, preloadedPis.length, onRefreshPis])
 
     const selectedPi = useMemo(() => {
         return availablePis.find((pi) => pi.piKey === deviceForm.raspberryPiKey) || null
