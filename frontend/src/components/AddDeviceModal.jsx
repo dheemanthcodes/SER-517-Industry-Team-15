@@ -1,12 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, Typography, Divider } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
+import apiBase from '../apiBase'
 
-function AddDeviceModal({ show, onClose, onSuccess }) {
+function AddDeviceModal({
+    show,
+    onClose,
+    onSuccess,
+    availablePis: preloadedPis = [],
+    piLoading: preloadedPiLoading = false,
+    piLoadError: preloadedPiLoadError = '',
+    onRefreshPis
+}) {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [deviceForm, setDeviceForm] = useState({
         ambulanceNumber: '',
+        raspberryPiKey: '',
         drugBox1Label: '',
         drugBox1BleId: '',
         drugBox2Label: '',
@@ -16,6 +26,70 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
         narcoticsPouch2Label: '',
         narcoticsPouch2BleId: ''
     })
+    
+    const [availablePis, setAvailablePis] = useState(preloadedPis)
+    const [piLoading, setPiLoading] = useState(preloadedPiLoading)
+    const [piLoadError, setPiLoadError] = useState(preloadedPiLoadError)
+
+    const loadAvailablePis = async () => {
+        setPiLoading(true)
+        setPiLoadError('')
+
+        try {
+            const res = await fetch(`${apiBase}/api/fetchpidetails`)
+            const json = await res.json()
+
+            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
+                piKey,
+                ambulanceId: piData?.ambulanceId || '',
+                ipAddress: piData?.ipAddress || '',
+                devices: Array.isArray(piData?.devices) ? piData.devices : []
+            }))
+
+            const unassignedPis = piList.filter((pi) => !pi.ambulanceId)
+            setAvailablePis(unassignedPis)
+        } catch (err) {
+            console.error('Failed to load Raspberry Pi options:', err)
+            setPiLoadError('Failed to load Raspberry Pi options.')
+            setAvailablePis([])
+        } finally {
+            setPiLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        setAvailablePis(preloadedPis)
+        setPiLoading(preloadedPiLoading)
+        setPiLoadError(preloadedPiLoadError)
+    }, [preloadedPis, preloadedPiLoading, preloadedPiLoadError])
+
+    useEffect(() => {
+        if (show && preloadedPis.length === 0 && onRefreshPis) {
+            onRefreshPis()
+        } else if (show && preloadedPis.length === 0) {
+            loadAvailablePis()
+        }
+    }, [show, preloadedPis.length, onRefreshPis])
+
+    const selectedPi = useMemo(() => {
+        return availablePis.find((pi) => pi.piKey === deviceForm.raspberryPiKey) || null
+    }, [availablePis, deviceForm.raspberryPiKey])
+
+    const selectedPiDevices = useMemo(() => {
+        return Array.isArray(selectedPi?.devices) ? selectedPi.devices : []
+    }, [selectedPi])
+
+    const boxDevices = useMemo(() => {
+        return selectedPiDevices.filter((device) =>
+            (device.name || '').toLowerCase().includes('box')
+        )
+    }, [selectedPiDevices])
+
+    const pouchDevices = useMemo(() => {
+        return selectedPiDevices.filter((device) =>
+            (device.name || '').toLowerCase().includes('pouch')
+        )
+    }, [selectedPiDevices])
 
     const handleAddDevice = async (e) => {
         e.preventDefault()
@@ -27,6 +101,7 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
 
             setDeviceForm({
                 ambulanceNumber: '',
+                raspberryPiKey: '',
                 drugBox1Label: '',
                 drugBox1BleId: '',
                 drugBox2Label: '',
@@ -87,6 +162,115 @@ function AddDeviceModal({ show, onClose, onSuccess }) {
                                 disabled={loading}
                             />
                         </div>
+
+                        <div className="form-field">
+                        <Typography.Text>Link Raspberry Pi</Typography.Text>
+                        <select
+                            className="form-select"
+                            value={deviceForm.raspberryPiKey}
+                            onChange={(e) =>
+                                setDeviceForm({
+                                    ...deviceForm,
+                                    raspberryPiKey: e.target.value
+                                })
+                            }
+                            disabled={loading || piLoading || availablePis.length === 0}
+                        >
+                            <option value="">
+                                {piLoading
+                                    ? 'Loading Raspberry Pis...'
+                                    : availablePis.length > 0
+                                        ? 'Select Raspberry Pi'
+                                        : 'No unassigned Raspberry Pis available'}
+                            </option>
+
+                            {availablePis.map((pi) => (
+                                <option key={pi.piKey} value={pi.piKey}>
+                                    {pi.piKey}{pi.ipAddress ? ` (${pi.ipAddress})` : ''}
+                                </option>
+                            ))}
+                        </select>
+
+                        {piLoadError && (
+                            <div className="pi-inline-note pi-inline-note-error">
+                                {piLoadError}
+                            </div>
+                        )}
+
+                        {selectedPi && (
+                            <div className="pi-selected-preview">
+                                <div><strong>Selected Raspberry Pi:</strong> {selectedPi.piKey}</div>
+                                <div><strong>IP Address:</strong> {selectedPi.ipAddress || 'Not available'}</div>
+                                <div><strong>BLE Tags Found #:</strong> {selectedPi.devices.length}</div>
+                            </div>
+                        )}
+
+                        {selectedPi && (
+                            <div className="ble-device-pool">
+                                <div className="ble-device-pool-header">
+                                    <Typography.Text>Available BLE Tags from Selected Raspberry Pi</Typography.Text>
+                                </div>
+
+                                {selectedPiDevices.length > 0 ? (
+                                    <div className="ble-device-groups">
+                                        <div className="ble-device-group">
+                                            <div className="ble-device-group-title">Drug Box IDs</div>
+                                            {boxDevices.length > 0 ? (
+                                                <div className="ble-device-list">
+                                                    {boxDevices.map((device, index) => (
+                                                        <div
+                                                            key={`${device.name || 'box'}-${device.address || index}`}
+                                                            className="ble-device-card"
+                                                        >
+                                                            <div className="ble-device-name">
+                                                                {device.name || `Box Device ${index + 1}`}
+                                                            </div>
+                                                            <div className="ble-device-address">
+                                                                {device.address || 'No BLE address available'}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="ble-device-empty">
+                                                    No box BLE devices were returned for this Raspberry Pi.
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="ble-device-group">
+                                            <div className="ble-device-group-title">Narcotics Pouch IDs</div>
+                                            {pouchDevices.length > 0 ? (
+                                                <div className="ble-device-list">
+                                                    {pouchDevices.map((device, index) => (
+                                                        <div
+                                                            key={`${device.name || 'pouch'}-${device.address || index}`}
+                                                            className="ble-device-card"
+                                                        >
+                                                            <div className="ble-device-name">
+                                                                {device.name || `Pouch Device ${index + 1}`}
+                                                            </div>
+                                                            <div className="ble-device-address">
+                                                                {device.address || 'No BLE address available'}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="ble-device-empty">
+                                                    No pouch BLE devices were returned for this Raspberry Pi.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="ble-device-empty">
+                                        No BLE devices were returned for the selected Raspberry Pi.
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                     </div>
 
                     <div className="form-section">

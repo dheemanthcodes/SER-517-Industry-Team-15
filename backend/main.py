@@ -1,22 +1,37 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+import hashlib
+import os
+import secrets
+
+from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from pi_service import get_bluetooth_data, get_paired_devices, pair_device, remove_device, scan_devices
 
 import os
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client
+
+from pi_service import (
+    get_bluetooth_data,
+    get_paired_devices,
+    pair_device,
+    remove_device,
+    scan_devices,
+)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 SUPABASE_URL = os.getenv("supabase_url")
-SUPABASE_KEY = os.getenv("supabase_anonkey")
+# Server-side writes should use service role key (falls back to anon for local/dev only).
+SUPABASE_KEY = os.getenv("supabase_service_role_key") or os.getenv("supabase_anonkey")
 
-print("URL:", SUPABASE_URL)
-print("KEY:", SUPABASE_KEY)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing Supabase credentials: set supabase_url and supabase_service_role_key")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -33,6 +48,7 @@ app = FastAPI(
         {"name": "General", "description": "Basic health and welcome routes."},
         {"name": "Pi Data", "description": "Receive JSON data sent from a Raspberry Pi."},
         {"name": "Bluetooth", "description": "Manage Bluetooth scanning, pairing, and removal through the Pi."},
+{"name": "Dashboard", "description": "Dashboard and device management data endpoints."},
     ],
 )
 
@@ -204,79 +220,48 @@ def api_remove_device(payload: dict):
 
 
 def build_snapshot():
-    vehicles  = supabase.table("vehicles").select("*").execute().data
-    devices   = supabase.table("devices").select("*").execute().data
-    assets    = supabase.table("assets").select("*").execute().data
-    ble_tags  = supabase.table("ble_tags").select("*").execute().data
-    statuses  = supabase.table("asset_status").select("*").execute().data
-    alerts    = supabase.table("alerts").select("*").execute().data
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
 
-    tag_by_asset    = {t["asset_id"]: t for t in ble_tags}
-    status_by_asset = {s["asset_id"]: s for s in statuses}
-    device_by_veh   = {d["vehicle_id"]: d for d in devices}
-    alerts_by_veh   = {}
-    for a in alerts:
-        alerts_by_veh.setdefault(a["vehicle_id"], []).append(a)
+    vehicle_by_id = {v.get("id"): v for v in vehicles if v.get("id")}
+    tag_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
+    assets_by_vehicle = {}
+
+    for asset in assets:
+        vehicle_id = asset.get("vehicle_id")
+        if not vehicle_id:
+            continue
+        assets_by_vehicle.setdefault(vehicle_id, []).append(asset)
 
     ui_snapshot = {}
 
-    for veh in vehicles:
-        vid = veh["id"]
-        pi = device_by_veh.get(vid)
-
-        assets_out = []
-        for ast in assets:
-            if ast["vehicle_id"] != vid:
-                continue
-
-            tag = tag_by_asset.get(ast["id"])
-            status = status_by_asset.get(ast["id"])
-
-            assets_out.append({
-                "id": ast["id"],
-                "type": ast["type"],
-                "label": ast["label"],
-                "parent_asset_id": ast["parent_asset_id"],
-                "ble_tag": {
-                    "identifier": tag["identifier"],
-                    "tag_model": tag["tag_model"],
-                    "asset_id": tag["asset_id"],
-                } if tag else None,
-                "status": {
-                    "state": status["state"],
-                    "last_seen_at": status["last_seen_at"],
-                    "last_rssi": status["last_rssi"],
-                } if status else None,
-            })
-
-        vehicle_snapshot = {
-            "id": veh["id"],
-            "unit_number": veh["unit_number"],
-            "station_name": veh["station_name"],
-            "pi_device": {
-                "id": pi["id"],
-                "device_name": pi["device_name"],
-                "ip_address": pi["ip_address"],
-                "is_active": pi["is_active"],
-            } if pi else None,
-            "assets": assets_out,
-            "alerts": alerts_by_veh.get(vid, []),
-        }
-
-        if not pi:
+    for device in devices:
+        device_name = (device.get("device_name") or "").strip()
+        if not device_name:
             continue
 
-        ui_snapshot[pi["device_name"]] = {
-            "ambulanceId": vehicle_snapshot["unit_number"],
-            "ipAddress": vehicle_snapshot["pi_device"]["ip_address"],
-            "devices": [
+        vehicle_id = device.get("vehicle_id")
+        vehicle = vehicle_by_id.get(vehicle_id) if vehicle_id else None
+        vehicle_assets = assets_by_vehicle.get(vehicle_id, []) if vehicle_id else []
+
+        tracked_devices = []
+        for asset in vehicle_assets:
+            tag = tag_by_asset.get(asset.get("id"))
+            if not tag:
+                continue
+            tracked_devices.append(
                 {
-                    "name": asset["ble_tag"]["asset_id"],
-                    "address": asset["ble_tag"]["identifier"],
+                    "name": asset.get("label") or tag.get("asset_id"),
+                    "address": tag.get("identifier"),
                 }
-                for asset in vehicle_snapshot["assets"]
-                if asset["ble_tag"]
-            ],
+            )
+
+        ui_snapshot[device_name] = {
+            "ambulanceId": vehicle.get("unit_number") if vehicle else None,
+            "ipAddress": device.get("ip_address"),
+            "devices": tracked_devices,
         }
 
     return ui_snapshot
@@ -285,6 +270,55 @@ def build_snapshot():
 @app.get("/api/fetchpidetails", tags=["Dashboard"], summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
+
+
+@app.post("/api/updateambulance", tags=["Dashboard"], summary="Update an ambulance and its assets")
+def update_ambulance(payload: dict):
+    vehicle_id  = payload.get("vehicle_id")
+    unit_number = (payload.get("unit_number") or "").strip()
+    station_name = (payload.get("station_name") or "").strip()
+    assets_payload = payload.get("assets", [])
+
+    if not vehicle_id:
+        raise HTTPException(status_code=400, detail="'vehicle_id' is required")
+    if not unit_number:
+        raise HTTPException(status_code=400, detail="'unit_number' is required")
+
+    try:
+        rpc_payload = {
+            "p_vehicle_id":  vehicle_id,
+            "p_unit_number": unit_number,
+            "p_station_name": station_name,
+            "p_assets": [
+                {
+                    "id":             a.get("id"),
+                    "type":           a.get("type"),
+                    "label":          a.get("label"),
+                    "ble_identifier": (a.get("ble_identifier") or "").strip(),
+                    "parent_asset_id": a.get("parent_asset_id"),
+                }
+                for a in assets_payload
+            ],
+        }
+
+        result = supabase.rpc("update_ambulance", rpc_payload).execute()
+
+        try:
+            supabase.table("alerts").insert(
+	    {
+                "asset_id":   vehicle_id,
+                "vehicle_id": vehicle_id,
+                "status":     "OPEN",
+                "reason":     f"Device updated: {unit_number}",
+                "opened_at":  datetime.now(timezone.utc).isoformat(),
+		}
+	    ).execute()
+        except Exception as alert_err:
+            print(f"[WARN] Failed to log audit alert: {alert_err}")
+
+        return {"status": "success", "message": "Ambulance updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
@@ -308,6 +342,198 @@ def get_paired_devices_map():
     return result
 
 
+class PiDetailsPayload(BaseModel):
+    name: str
+    ip_address: str
+
+@app.post("/api/addpidetails", tags=["Pi Data"], summary="Add or update Raspberry Pi details")
+def add_pi_details(payload: PiDetailsPayload):
+    try:
+        name = payload.name.strip()
+        ip_address = payload.ip_address.strip()
+
+        if not name or not ip_address:
+            raise HTTPException(status_code=400, detail="name and ip_address are required")
+
+        device_response = (
+            supabase.table("devices")
+            .select("id")
+            .eq("device_name", name)
+            .execute()
+        )
+
+        devices = device_response.data or []
+
+        if devices:
+            supabase.table("devices").update(
+                {
+                    "ip_address": ip_address,
+                    "is_active": True,
+                }
+            ).eq("device_name", name).execute()
+
+            return {
+                "status": "success",
+                "message": "Pi details updated successfully",
+            }
+
+        supabase.table("devices").insert(
+            {
+                "device_name": name,
+                "ip_address": ip_address,
+                "vehicle_id": None,
+                "api_key_hash": hashlib.sha256(secrets.token_urlsafe(32).encode("utf-8")).hexdigest(),
+                "is_active": True,
+            }
+        ).execute()
+
+        return {"status": "success", "message": "Pi details added successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def build_device_management_payload():
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+
+    device_by_vehicle = {d.get("vehicle_id"): d for d in devices if d.get("vehicle_id")}
+    ble_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
+
+    vehicles_out = []
+    for veh in vehicles:
+        vid = veh.get("id")
+        if not vid:
+            continue
+
+        pi_device = device_by_vehicle.get(vid)
+        vehicle_assets = [a for a in assets if a.get("vehicle_id") == vid]
+
+        boxes = []
+        pouches = []
+
+        for asset in vehicle_assets:
+            asset_type = (asset.get("type") or "").upper()
+            tag = ble_by_asset.get(asset.get("id"))
+
+            payload = {
+                "asset_id": asset.get("id"),
+                "label": asset.get("label"),
+                "ble_mac_address": tag.get("identifier") if tag else None,
+                "parent_asset_id": asset.get("parent_asset_id"),
+            }
+
+            if asset_type == "BOX":
+                boxes.append(payload)
+            elif asset_type == "POUCH":
+                pouches.append(payload)
+
+        vehicles_out.append(
+            {
+                "vehicle_id": vid,
+                "ambulance_number": veh.get("unit_number"),
+                "station": veh.get("station_name"),
+                "raspberry_pi": {
+                    "id": pi_device.get("id"),
+                    "name": pi_device.get("device_name"),
+                    "ip_address": pi_device.get("ip_address"),
+                    "is_active": pi_device.get("is_active"),
+                }
+                if pi_device
+                else None,
+                "boxes": boxes,
+                "pouches": pouches,
+            }
+        )
+
+    return {"vehicles": vehicles_out}
+
+
+def build_all_details_payload():
+    vehicles = supabase.table("vehicles").select("id, unit_number, station_name").execute().data or []
+    devices = supabase.table("devices").select("vehicle_id, device_name, ip_address").execute().data or []
+    assets = supabase.table("assets").select("id, vehicle_id, type, label").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("asset_id, identifier, tag_model").execute().data or []
+
+    vehicle_by_id = {vehicle.get("id"): vehicle for vehicle in vehicles if vehicle.get("id")}
+    device_by_vehicle_id = {
+        device.get("vehicle_id"): device for device in devices if device.get("vehicle_id")
+    }
+    ble_tag_by_asset_id = {
+        ble_tag.get("asset_id"): ble_tag for ble_tag in ble_tags if ble_tag.get("asset_id")
+    }
+
+    rows = []
+    for asset in assets:
+        vehicle_id = asset.get("vehicle_id")
+        asset_id = asset.get("id")
+
+        vehicle = vehicle_by_id.get(vehicle_id)
+        device = device_by_vehicle_id.get(vehicle_id)
+        ble_tag = ble_tag_by_asset_id.get(asset_id)
+
+        # Match the SQL's INNER JOIN behavior by only returning fully joined rows.
+        if not vehicle or not device or not ble_tag:
+            continue
+
+        rows.append(
+            {
+                "vehicle_id": vehicle.get("id"),
+                "unit_number": vehicle.get("unit_number"),
+                "station_name": vehicle.get("station_name"),
+                "device_name": device.get("device_name"),
+                "ip_address": device.get("ip_address"),
+                "asset_id": asset_id,
+                "asset_type": asset.get("type"),
+                "label": asset.get("label"),
+                "ble_identifier": ble_tag.get("identifier"),
+                "tag_model": ble_tag.get("tag_model"),
+            }
+        )
+
+    return rows
+
+
+@app.get(
+    "/api/fetchalldetails",
+    tags=["Dashboard"],
+    summary="Get flat vehicle, device, asset, and BLE tag details",
+)
+def get_all_details():
+    try:
+        data = build_all_details_payload()
+        return {
+            "status": "success",
+            "source": "supabase",
+            "data": data,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch all details: {str(e)}",
+        )
+
+
+@app.get("/api/dashboard/paired-devices", tags=["Dashboard"], summary="Get paired devices by Pi")
+def get_paired_devices_map():
+    snapshot = build_snapshot()
+    result = {}
+
+    for device_name, data in snapshot.items():
+        result[device_name] = {
+            "ambulanceId": data.get("ambulanceId"),
+            "ipAddress": data.get("ipAddress"),
+            "devices": data.get("devices", []),
+        }
+
+    return result
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    

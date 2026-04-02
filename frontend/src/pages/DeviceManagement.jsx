@@ -2,11 +2,52 @@ import { useState, useEffect } from 'react'
 import { Button, Input } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
+import apiBase from '../apiBase'
+
+const normalizeAllDetailsRows = (rows) => {
+    const vehiclesById = new Map()
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+        const vehicleId = row?.vehicle_id
+        if (!vehicleId) continue
+
+        if (!vehiclesById.has(vehicleId)) {
+            vehiclesById.set(vehicleId, {
+                id: vehicleId,
+                unit_number: row?.unit_number || '',
+                station_name: row?.station_name || '',
+                raspberry_pi: {
+                    name: row?.device_name || '',
+                    ip_address: row?.ip_address || ''
+                },
+                assets: []
+            })
+        }
+
+        const vehicle = vehiclesById.get(vehicleId)
+        vehicle.assets.push({
+            id: row?.asset_id || `${vehicleId}-asset-${vehicle.assets.length}`,
+            type: row?.asset_type || '',
+            label: row?.label || '',
+            parent_asset_id: row?.parent_asset_id || null,
+            ble_tag: {
+                identifier: row?.ble_identifier || '',
+                tag_model: row?.tag_model || ''
+            }
+        })
+    }
+
+    return Array.from(vehiclesById.values())
+}
 
 function DeviceManagement() {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
 
     const [vehicles, setVehicles] = useState([])
+    const [allPis, setAllPis] = useState([])
+    const [availablePis, setAvailablePis] = useState([])
+    const [piLoading, setPiLoading] = useState(false)
+    const [piLoadError, setPiLoadError] = useState('')
     const [expandedVehicle, setExpandedVehicle] = useState(null)
     const [fetchLoading, setFetchLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -17,6 +58,7 @@ function DeviceManagement() {
 
     useEffect(() => {
         fetchVehicles()
+        fetchPiDetails()
     }, [])
 
     const fetchVehicles = async () => {
@@ -24,25 +66,52 @@ function DeviceManagement() {
             setFetchLoading(true)
             setError(null)
 
-            const { data, error: fetchError } = await supabase
-                .from('vehicles')
-                .select(`
-                    *,
-                    assets:assets(
-                        *,
-                        ble_tag:ble_tags(*)
-                    )
-                `)
-                .order('created_at', { ascending: false })
+            const res = await fetch(`${apiBase}/api/fetchalldetails`)
+            const json = await res.json()
 
-            if (fetchError) throw fetchError
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Failed to load vehicles')
+            }
 
-            setVehicles(data || [])
+            const backendRows = Array.isArray(json?.data) ? json.data : []
+            setVehicles(normalizeAllDetailsRows(backendRows))
         } catch (err) {
             console.error('Error fetching vehicles:', err)
             setError('Failed to load vehicles. Please try again.')
         } finally {
             setFetchLoading(false)
+        }
+    }
+
+    const fetchPiDetails = async () => {
+        try {
+            setPiLoading(true)
+            setPiLoadError('')
+
+            const res = await fetch(`${apiBase}/api/fetchpidetails`)
+            const json = await res.json()
+
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Failed to load Raspberry Pi options')
+            }
+
+            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
+                piKey,
+                ambulanceId: piData?.ambulanceId || '',
+                ipAddress: piData?.ipAddress || '',
+                devices: Array.isArray(piData?.devices) ? piData.devices : []
+            }))
+
+            setAllPis(piList)
+            const unassignedPis = piList.filter((pi) => !pi.ambulanceId)
+            setAvailablePis(unassignedPis)
+        } catch (err) {
+            console.error('Failed to load Raspberry Pi options:', err)
+            setPiLoadError('Failed to load Raspberry Pi options.')
+            setAllPis([])
+            setAvailablePis([])
+        } finally {
+            setPiLoading(false)
         }
     }
 
@@ -71,6 +140,48 @@ function DeviceManagement() {
         })
     }
 
+    const handleRaspberryPiChange = (piKey) => {
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+
+            const selectedPi = allPis.find((pi) => pi.piKey === piKey)
+
+            if (!selectedPi) {
+                return {
+                    ...prev,
+                    raspberry_pi: {
+                        ...(prev.raspberry_pi || {}),
+                        name: '',
+                        ip_address: ''
+                    },
+                    assets: (prev.assets || []).map((asset) => ({
+                        ...asset,
+                        ble_tag: {
+                            ...(asset.ble_tag || {}),
+                            identifier: ''
+                        }
+                    }))
+                }
+            }
+
+            return {
+                ...prev,
+                raspberry_pi: {
+                    ...(prev.raspberry_pi || {}),
+                    name: selectedPi.piKey,
+                    ip_address: selectedPi.ipAddress || ''
+                },
+                assets: (prev.assets || []).map((asset) => ({
+                    ...asset,
+                    ble_tag: {
+                        ...(asset.ble_tag || {}),
+                        identifier: ''
+                    }
+                }))
+            }
+        })
+    }
+
     const handleAssetLabelChange = (assetId, value) => {
         setEditingVehicleData((prev) => {
             if (!prev) return prev
@@ -91,12 +202,12 @@ function DeviceManagement() {
                 assets: (prev.assets || []).map((asset) =>
                     asset.id === assetId
                         ? {
-                              ...asset,
-                              ble_tag: {
-                                  ...(asset.ble_tag || {}),
-                                  identifier: value
-                              }
-                          }
+                            ...asset,
+                            ble_tag: {
+                                ...(asset.ble_tag || {}),
+                                identifier: value
+                            }
+                        }
                         : asset
                 )
             }
@@ -152,10 +263,10 @@ function DeviceManagement() {
 
         try {
             const payload = {
-                p_vehicle_id: vehicleIdToSave,
-                p_unit_number: unitNumber,
-                p_station_name: (vehicleDataToSave.station_name || '').trim(),
-                p_assets: (vehicleDataToSave.assets || []).map((asset) => ({
+                vehicle_id: vehicleIdToSave,
+                unit_number: unitNumber,
+                station_name: (vehicleDataToSave.station_name || '').trim(),
+                assets: (vehicleDataToSave.assets || []).map((asset) => ({
                     id: asset.id,
                     type: asset.type,
                     label: asset.label,
@@ -167,38 +278,20 @@ function DeviceManagement() {
                 }))
             }
 
-            // Persist updates server-side via RPC because your RLS policy
-            // blocks client updates into `vehicles`/`assets`.
-            const { error: rpcError } = await supabase.rpc(
-                'update_ambulance',
-                payload
-            )
-            if (rpcError) throw rpcError
+            const res = await fetch(`${apiBase}/api/updateambulance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
 
-            setVehicles((prev) =>
-                prev.map((vehicle) =>
-                    vehicle.id === vehicleIdToSave ? vehicleDataToSave : vehicle
-                )
-            )
+            const json = await res.json()
+            if (!res.ok) throw new Error(json.detail || json.message || 'Update failed')
+
             await fetchVehicles()
             setExpandedVehicle(vehicleIdToSave)
-
             setEditingVehicleId(null)
             setEditingVehicleData(null)
             setEditingError('')
-
-            // UI-level audit entry (not blocking the edit save).
-            try {
-                await supabase.from('alerts').insert({
-                    asset_id: vehicleIdToSave,
-                    vehicle_id: vehicleIdToSave,
-                    status: 'OPEN',
-                    reason: `Device updated: ${unitNumber}`,
-                    opened_at: new Date().toISOString()
-                })
-            } catch (error) {
-                console.error('Error logging device update event:', error)
-            }
         } catch (error) {
             console.error('Error updating device:', error)
             setEditingError(
@@ -374,7 +467,7 @@ function DeviceManagement() {
                         </div>
                     ) : vehicles.length === 0 ? (
                         <div className="vehicles-state vehicles-state--subtle">
-                            No vehicles registered yet. Use &quot;Register Ambulance&quot; to add one.
+                            No vehicles registered yet. Use "Register Ambulance" to add one.
                         </div>
                     ) : (
                         vehicles.map((vehicle) => {
@@ -385,8 +478,8 @@ function DeviceManagement() {
 
                             const currentVehicle =
                                 isEditing &&
-                                editingVehicleData &&
-                                editingVehicleData.id === vehicle.id
+                                    editingVehicleData &&
+                                    editingVehicleData.id === vehicle.id
                                     ? editingVehicleData
                                     : vehicle
 
@@ -398,6 +491,32 @@ function DeviceManagement() {
                                 acc[box.id] = box.label
                                 return acc
                             }, {})
+
+                            const raspberryPiOptions = [
+                                ...(currentVehicle.raspberry_pi?.name
+                                    ? [
+                                        {
+                                            piKey: currentVehicle.raspberry_pi.name,
+                                            ipAddress: currentVehicle.raspberry_pi.ip_address || ''
+                                        }
+                                    ]
+                                    : []),
+                                ...availablePis.filter(
+                                    (pi) => pi.piKey !== currentVehicle.raspberry_pi?.name
+                                )
+                            ]
+                            const selectedEditPi = allPis.find(
+                                (pi) => pi.piKey === currentVehicle.raspberry_pi?.name
+                            )
+                            const selectedEditPiDevices = Array.isArray(selectedEditPi?.devices)
+                                ? selectedEditPi.devices
+                                : []
+                            const getBleOptionsForType = (assetType) =>
+                                selectedEditPiDevices.filter((device) =>
+                                    (device.name || '').toLowerCase().includes(
+                                        assetType === 'BOX' ? 'box' : 'pouch'
+                                    )
+                                )
 
                             return (
                                 <div key={vehicle.id} className="vehicle-card">
@@ -504,162 +623,260 @@ function DeviceManagement() {
                                                             )}
                                                         </div>
                                                     </div>
+
+                                                    <div className="vehicle-field">
+                                                        <div className="vehicle-field-label">Raspberry Pi</div>
+                                                        <div className="vehicle-field-value">
+                                                            {isEditing ? (
+                                                                <select
+                                                                    value={currentVehicle.raspberry_pi?.name || ''}
+                                                                    onChange={(e) =>
+                                                                        handleRaspberryPiChange(
+                                                                            e.target.value
+                                                                        )
+                                                                    }
+                                                                    className="vehicle-asset-select"
+                                                                    disabled={piLoading}
+                                                                >
+                                                                    <option value="">
+                                                                        {piLoading
+                                                                            ? 'Loading Raspberry Pis...'
+                                                                            : 'Select Raspberry Pi'}
+                                                                    </option>
+                                                                    {raspberryPiOptions.map((pi) => (
+                                                                        <option key={pi.piKey} value={pi.piKey}>
+                                                                            {pi.piKey}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            ) : (
+                                                                currentVehicle.raspberry_pi?.name || '—'
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="vehicle-field">
+                                                        <div className="vehicle-field-label">Pi IP Address</div>
+                                                        <div className="vehicle-field-value">
+                                                            {isEditing ? (
+                                                                <div className="vehicle-asset-value">
+                                                                    {currentVehicle.raspberry_pi?.ip_address || '—'}
+                                                                </div>
+                                                            ) : (
+                                                                currentVehicle.raspberry_pi?.ip_address || '—'
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
 
+                                            {isEditing && piLoadError && (
+                                                <div
+                                                    style={{
+                                                        color: '#b91c1c',
+                                                        fontSize: '13px',
+                                                        marginTop: '8px'
+                                                    }}
+                                                >
+                                                    {piLoadError}
+                                                </div>
+                                            )}
+
                                             <div className="vehicle-section">
-                                                <div className="vehicle-section-label">DRUG BOXES</div>
+                                                <div className="vehicle-section-label">BOXES</div>
                                                 {drugBoxes.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No drug boxes configured for this ambulance.
+                                                        No boxes configured for this ambulance.
                                                     </div>
                                                 ) : (
-                                                    drugBoxes.map((box, index) => (
-                                                        <div key={box.id} className="vehicle-row">
-                                                            <div className="vehicle-row-main">
-                                                                <span className="vehicle-row-prefix">
-                                                                    Box {index + 1}
-                                                                </span>
-                                                                {isEditing ? (
-                                                                    <Input
-                                                                        value={box.label || ''}
-                                                                        onChange={(e) =>
-                                                                            handleAssetLabelChange(
-                                                                                box.id,
-                                                                                e.target.value
-                                                                            )
-                                                                        }
-                                                                        style={{ width: '160px' }}
-                                                                    />
-                                                                ) : (
-                                                                    <span className="vehicle-row-label">
-                                                                        {box.label}
+                                                    <div className="vehicle-assets-grid">
+                                                        {drugBoxes.map((box, index) => (
+                                                            <div key={box.id} className="vehicle-asset-card">
+                                                                <div className="vehicle-asset-header">
+                                                                    <span className="vehicle-asset-icon">📦</span>
+                                                                    <span className="vehicle-asset-title">
+                                                                        Box {index + 1}
                                                                     </span>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="vehicle-row-meta">
-                                                                <span className="pill pill-ble">
-                                                                    {isEditing ? (
-                                                                        <span className="pill-code">
+                                                                </div>
+                                                                <div className="vehicle-asset-body">
+                                                                    <div className="vehicle-asset-field">
+                                                                        <div className="vehicle-asset-label">Label</div>
+                                                                        {isEditing ? (
                                                                             <Input
-                                                                                value={
-                                                                                    box.ble_tag?.identifier || ''
+                                                                                value={box.label || ''}
+                                                                                onChange={(e) =>
+                                                                                    handleAssetLabelChange(
+                                                                                        box.id,
+                                                                                        e.target.value
+                                                                                    )
                                                                                 }
+                                                                            />
+                                                                        ) : (
+                                                                            <div className="vehicle-asset-value">
+                                                                                {box.label}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="vehicle-asset-field">
+                                                                        <div className="vehicle-asset-label">BLE Identifier</div>
+                                                                        {isEditing ? (
+                                                                            <select
+                                                                                value={box.ble_tag?.identifier || ''}
                                                                                 onChange={(e) =>
                                                                                     handleAssetBleChange(
                                                                                         box.id,
                                                                                         e.target.value
                                                                                     )
                                                                                 }
-                                                                                style={{ width: '190px' }}
-                                                                            />
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="pill-code">
-                                                                            {box.ble_tag?.identifier}
-                                                                        </span>
-                                                                    )}
-                                                                </span>
+                                                                                className="vehicle-asset-select"
+                                                                            >
+                                                                                <option value="">
+                                                                                    Select device address
+                                                                                </option>
+                                                                                {getBleOptionsForType('BOX').map(
+                                                                                    (device, deviceIndex) => (
+                                                                                        <option
+                                                                                            key={`${device.address || 'box'}-${deviceIndex}`}
+                                                                                            value={device.address || ''}
+                                                                                        >
+                                                                                            {device.address || 'No address'}
+                                                                                        </option>
+                                                                                    )
+                                                                                )}
+                                                                            </select>
+                                                                        ) : (
+                                                                            <div className="vehicle-asset-ble">
+                                                                                {box.ble_tag?.identifier}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="vehicle-asset-field">
+                                                                        <div className="vehicle-asset-label">Tag Model</div>
+                                                                        <div className="vehicle-asset-value">
+                                                                            {box.ble_tag?.tag_model || '—'}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))
+                                                        ))}
+                                                    </div>
                                                 )}
                                             </div>
 
                                             <div className="vehicle-section">
-                                                <div className="vehicle-section-label">
-                                                    NARCOTICS POUCHES
-                                                </div>
+                                                <div className="vehicle-section-label">POUCHES</div>
                                                 {pouches.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No narcotics pouches configured for this ambulance.
+                                                        No pouches configured for this ambulance.
                                                     </div>
                                                 ) : (
-                                                    pouches.map((pouch, index) => {
-                                                        const parentLabel = pouch.parent_asset_id
-                                                            ? boxLabelById[pouch.parent_asset_id] ||
-                                                              'Unassigned'
-                                                            : 'Unassigned'
+                                                    <div className="vehicle-assets-grid">
+                                                        {pouches.map((pouch, index) => {
+                                                            const parentLabel = pouch.parent_asset_id
+                                                                ? boxLabelById[pouch.parent_asset_id] ||
+                                                                'Unassigned'
+                                                                : 'Unassigned'
 
-                                                        return (
-                                                            <div key={pouch.id} className="vehicle-row">
-                                                                <div className="vehicle-row-main">
-                                                                    <span className="vehicle-row-prefix">
-                                                                        Pouch {index + 1}
-                                                                    </span>
-                                                                    {isEditing ? (
-                                                                        <Input
-                                                                            value={pouch.label || ''}
-                                                                            onChange={(e) =>
-                                                                                handleAssetLabelChange(
-                                                                                    pouch.id,
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                            style={{ width: '180px' }}
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="vehicle-row-label">
-                                                                            {pouch.label}
+                                                            return (
+                                                                <div key={pouch.id} className="vehicle-asset-card">
+                                                                    <div className="vehicle-asset-header">
+                                                                        <span className="vehicle-asset-icon">👝</span>
+                                                                        <span className="vehicle-asset-title">
+                                                                            Pouch {index + 1}
                                                                         </span>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="vehicle-row-meta vehicle-row-meta--pouch">
-                                                                    <span className="pill pill-ble">
-                                                                        {isEditing ? (
-                                                                            <span className="pill-code">
+                                                                    </div>
+                                                                    <div className="vehicle-asset-body">
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">Label</div>
+                                                                            {isEditing ? (
                                                                                 <Input
-                                                                                    value={
-                                                                                        pouch.ble_tag?.identifier ||
-                                                                                        ''
+                                                                                    value={pouch.label || ''}
+                                                                                    onChange={(e) =>
+                                                                                        handleAssetLabelChange(
+                                                                                            pouch.id,
+                                                                                            e.target.value
+                                                                                        )
                                                                                     }
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="vehicle-asset-value">
+                                                                                    {pouch.label}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">BLE Identifier</div>
+                                                                            {isEditing ? (
+                                                                                <select
+                                                                                    value={pouch.ble_tag?.identifier || ''}
                                                                                     onChange={(e) =>
                                                                                         handleAssetBleChange(
                                                                                             pouch.id,
                                                                                             e.target.value
                                                                                         )
                                                                                     }
-                                                                                    style={{ width: '190px' }}
-                                                                                />
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="pill-code">
-                                                                                {pouch.ble_tag?.identifier}
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-
-                                                                    {isEditing ? (
-                                                                        <select
-                                                                            value={pouch.parent_asset_id || ''}
-                                                                            onChange={(e) =>
-                                                                                handleAssetParentChange(
-                                                                                    pouch.id,
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                        >
-                                                                            <option value="">Unassigned</option>
-                                                                            {drugBoxes.map((box) => (
-                                                                                <option
-                                                                                    key={box.id}
-                                                                                    value={box.id}
+                                                                                    className="vehicle-asset-select"
                                                                                 >
-                                                                                    {box.label}
-                                                                                </option>
-                                                                            ))}
-                                                                        </select>
-                                                                    ) : (
-                                                                        <span className="pill pill-soft">
-                                                                            {parentLabel}
-                                                                        </span>
-                                                                    )}
+                                                                                    <option value="">
+                                                                                        Select device address
+                                                                                    </option>
+                                                                                    {getBleOptionsForType('POUCH').map(
+                                                                                        (device, deviceIndex) => (
+                                                                                            <option
+                                                                                                key={`${device.address || 'pouch'}-${deviceIndex}`}
+                                                                                                value={device.address || ''}
+                                                                                            >
+                                                                                                {device.address || 'No address'}
+                                                                                            </option>
+                                                                                        )
+                                                                                    )}
+                                                                                </select>
+                                                                            ) : (
+                                                                                <div className="vehicle-asset-ble">
+                                                                                    {pouch.ble_tag?.identifier}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">Tag Model</div>
+                                                                            <div className="vehicle-asset-value">
+                                                                                {pouch.ble_tag?.tag_model || '—'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="vehicle-asset-field">
+                                                                            <div className="vehicle-asset-label">Assigned to</div>
+                                                                            {isEditing ? (
+                                                                                <select
+                                                                                    value={pouch.parent_asset_id || ''}
+                                                                                    onChange={(e) =>
+                                                                                        handleAssetParentChange(
+                                                                                            pouch.id,
+                                                                                            e.target.value
+                                                                                        )
+                                                                                    }
+                                                                                    className="vehicle-asset-select"
+                                                                                >
+                                                                                    <option value="">Unassigned</option>
+                                                                                    {drugBoxes.map((box) => (
+                                                                                        <option
+                                                                                            key={box.id}
+                                                                                            value={box.id}
+                                                                                        >
+                                                                                            {box.label}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            ) : (
+                                                                                <div className="vehicle-asset-value">
+                                                                                    {parentLabel}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        )
-                                                    })
+                                                            )
+                                                        })}
+                                                    </div>
                                                 )}
                                             </div>
 
@@ -706,6 +923,10 @@ function DeviceManagement() {
                     show={showAddDeviceModal}
                     onClose={() => setShowAddDeviceModal(false)}
                     onSuccess={handleRegisterAmbulance}
+                    availablePis={availablePis}
+                    piLoading={piLoading}
+                    piLoadError={piLoadError}
+                    onRefreshPis={fetchPiDetails}
                 />
             </div>
         </div>

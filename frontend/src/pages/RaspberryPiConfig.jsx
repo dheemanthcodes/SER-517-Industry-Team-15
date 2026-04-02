@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import './RaspberryPiConfig.css'
+import apiBase from '../apiBase'
 
 function RaspberryPiConfig() {
     // pis is an array derived from the backend response object
-    // Each entry: { piKey, ambulanceId, ipAddress, devices: [{name, address}] }
+    // Each entry: { piKey, ipAddress, devices: [{name, address}] }
     const [pis, setPis] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedPi, setSelectedPi] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [expandedPis, setExpandedPis] = useState(new Set())
+    const [newPiName, setNewPiName] = useState('')
+    const [newPiIp, setNewPiIp] = useState('')
+    const [addPiMessage, setAddPiMessage] = useState('')
 
     const toggleExpand = (piKey) => {
-        setExpandedPis(prev => {
+        setExpandedPis((prev) => {
             const next = new Set(prev)
             if (next.has(piKey)) {
                 next.delete(piKey)
@@ -39,21 +43,19 @@ function RaspberryPiConfig() {
     /**
      * Backend returns an object like:
      * {
-     *   "pi-1": { "ambulanceId": "AMB-001", "ipAddress": "192.168.1.101", "devices": [...] },
-     *   "pi-2": { "ambulanceId": "AMB-002", "ipAddress": "192.168.1.102", "devices": [...] }
+     *   "pi-1": { "ipAddress": "192.168.1.101", "devices": [...] },
+     *   "pi-2": { "ipAddress": "192.168.1.102", "devices": [...] }
      * }
      */
     const fetchPiDetails = async () => {
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/fetchpidetails`)
+            const res = await fetch(`${apiBase}/api/fetchpidetails`)
             const json = await res.json()
 
-            // Convert the keyed object into an array for easier rendering
-            const piList = Object.entries(json).map(([piKey, piData]) => ({
+            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
                 piKey,
-                ambulanceId: piData.ambulanceId,
-                ipAddress: piData.ipAddress,
-                devices: piData.devices || [],
+                ipAddress: piData?.ipAddress,
+                devices: Array.isArray(piData?.devices) ? piData.devices : [],
             }))
             setPis(piList)
         } catch (e) {
@@ -63,10 +65,51 @@ function RaspberryPiConfig() {
         }
     }
 
-    const filteredPis = pis.filter(pi =>
-        pi.ambulanceId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pi.piKey.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    const handleAddPi = async () => {
+        if (!newPiName.trim()) return setAddPiMessage('Name is required.')
+        if (!newPiIp.trim()) return setAddPiMessage('IP Address is required.')
+
+        setAddPiMessage('Adding...')
+        try {
+            const res = await fetch(`${apiBase}/api/addpidetails`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newPiName.trim(),
+                    ip_address: newPiIp.trim(),
+                }),
+            })
+            const json = await res.json()
+            if (res.ok) {
+                const newPi = {
+                    piKey: newPiName.trim(),
+                    ipAddress: newPiIp.trim(),
+                    devices: [],
+                }
+                setPis((prev) => [newPi, ...prev])
+                setNewPiName('')
+                setNewPiIp('')
+                setAddPiMessage('Raspberry Pi added successfully.')
+                setTimeout(() => setAddPiMessage(''), 3000)
+            } else {
+                setAddPiMessage(`Failed: ${json.detail || json.message || 'Unknown error'}`)
+            }
+        } catch (e) {
+            console.error(e)
+            setAddPiMessage('Error connecting to server.')
+        }
+    }
+
+    const filteredPis = pis.filter((pi) => {
+        const term = searchTerm.toLowerCase()
+        return (
+            pi.piKey.toLowerCase().includes(term) ||
+            (pi.ipAddress || '').toLowerCase().includes(term) ||
+            pi.devices.some((device) =>
+                `${device?.name || ''} ${device?.address || ''}`.toLowerCase().includes(term)
+            )
+        )
+    })
 
     useEffect(() => {
         if (selectedPi) {
@@ -81,7 +124,7 @@ function RaspberryPiConfig() {
 
     const fetchPaired = async () => {
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/paired?pi_ip=${selectedPi?.ipAddress || ''}`)
+            const res = await fetch(`${apiBase}/api/bluetooth/paired?pi_ip=${selectedPi?.ipAddress || ''}`)
             const json = await res.json()
             if (json.status === 'success') setPaired(json.data.paired_devices || [])
         } catch (e) {
@@ -93,7 +136,7 @@ function RaspberryPiConfig() {
         setScanning(true)
         setMessage('Scanning for devices...')
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/scan?seconds=6&pi_ip=${selectedPi?.ipAddress || ''}`)
+            const res = await fetch(`${apiBase}/api/bluetooth/scan?seconds=6&pi_ip=${selectedPi?.ipAddress || ''}`)
             let json
             try {
                 json = await res.json()
@@ -125,10 +168,10 @@ function RaspberryPiConfig() {
     const handlePair = async (mac) => {
         setMessage(`Pairing ${mac}...`)
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/pair`, {
+            const res = await fetch(`${apiBase}/api/bluetooth/pair`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' })
+                body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' }),
             })
             const json = await res.json()
             if (json.status === 'success') {
@@ -146,10 +189,10 @@ function RaspberryPiConfig() {
     const handleRemove = async (mac) => {
         setMessage(`Removing ${mac}...`)
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bluetooth/remove`, {
+            const res = await fetch(`${apiBase}/api/bluetooth/remove`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' })
+                body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' }),
             })
             const json = await res.json()
             if (json.status === 'success') {
@@ -176,12 +219,36 @@ function RaspberryPiConfig() {
 
             {!selectedPi ? (
                 <div className="pi-list-view">
-                    <h2 className="section-title">Ambulances with Pi Devices</h2>
+                    <div className="add-pi-box" style={{ marginTop: 0, marginBottom: '32px' }}>
+                        <h3 className="section-title" style={{ fontSize: '16px' }}>Add Raspberry Pi</h3>
+                        <div className="add-pi-form">
+                            <input
+                                className="mac-input"
+                                placeholder="Name (e.g. pi-3)"
+                                value={newPiName}
+                                onChange={(e) => setNewPiName(e.target.value)}
+                            />
+                            <input
+                                className="mac-input"
+                                placeholder="IP Address (e.g. 192.168.1.100)"
+                                value={newPiIp}
+                                onChange={(e) => setNewPiIp(e.target.value)}
+                            />
+                            <button onClick={handleAddPi} className="btn-secondary">
+                                Add Device
+                            </button>
+                        </div>
+                        {addPiMessage && (
+                            <p className="status-message" style={{ marginTop: '12px' }}>{addPiMessage}</p>
+                        )}
+                    </div>
+
+                    <h2 className="section-title">Pi Devices with Connected BLEs</h2>
                     <div className="search-box" style={{ marginBottom: '20px' }}>
                         <input
                             type="text"
                             className="mac-input"
-                            placeholder="Search by Ambulance ID or Pi name"
+                            placeholder="Search by Pi name, IP, or BLE device"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{ width: '100%' }}
@@ -193,20 +260,17 @@ function RaspberryPiConfig() {
                         </div>
                     ) : filteredPis.length === 0 ? (
                         <div className="empty-state">
-                            <p className="muted">{searchTerm ? 'No ambulances found matching your search.' : 'No Raspberry Pis configured.'}</p>
+                            <p className="muted">{searchTerm ? 'No Pi devices found matching your search.' : 'No Raspberry Pis configured.'}</p>
                         </div>
                     ) : (
                         <div className="pi-grid">
-                            {filteredPis.map(pi => (
+                            {filteredPis.map((pi) => (
                                 <div key={pi.piKey} className="pi-card">
-                                    <div
-                                        className="pi-card-header"
-                                        onClick={() => toggleExpand(pi.piKey)}
-                                    >
+                                    <div className="pi-card-header" onClick={() => toggleExpand(pi.piKey)}>
                                         <div className="pi-card-header-left">
                                             <span className={`chevron ${expandedPis.has(pi.piKey) ? 'chevron-open' : ''}`}>&#9654;</span>
-                                            <span className="detail-label">Ambulance ID:</span>
-                                            <span className="detail-value ambulance-id-heading">{pi.ambulanceId}</span>
+                                            <span className="detail-label">Pi Name:</span>
+                                            <span className="detail-value pi-name-heading">{pi.piKey}</span>
                                         </div>
                                         <span className="device-count-badge">{pi.devices.length} devices</span>
                                     </div>
@@ -223,14 +287,14 @@ function RaspberryPiConfig() {
                                                     <span className="detail-value">{pi.ipAddress || 'No IP address'}</span>
                                                 </div>
                                                 <div className="detail-row">
-                                                    <span className="detail-label">BLE Devices:</span>
+                                                    <span className="detail-label">Connected BLE Devices:</span>
                                                     <span className="detail-value">{pi.devices.length} tracked</span>
                                                 </div>
                                             </div>
 
                                             {pi.devices.length > 0 && (
                                                 <div className="pi-device-list">
-                                                    <h4 className="pi-device-list-title">Tracked BLE Devices</h4>
+                                                    <h4 className="pi-device-list-title">BLE Devices Connected to This Pi</h4>
                                                     <ul className="device-list">
                                                         {pi.devices.map((device, idx) => (
                                                             <li key={device.address || idx} className="device-row compact-row">
@@ -263,9 +327,9 @@ function RaspberryPiConfig() {
                             &larr; Back to Devices
                         </button>
                         <h2 className="section-title" style={{ marginBottom: 0 }}>
-                            {selectedPi.ambulanceId}
+                            {selectedPi.piKey}
                             <span className="muted" style={{ fontWeight: 400, marginLeft: '8px' }}>
-                                {selectedPi.piKey} — {selectedPi.ipAddress || 'No IP'}
+                                {selectedPi.ipAddress || 'No IP'}
                             </span>
                         </h2>
                     </div>
@@ -273,7 +337,7 @@ function RaspberryPiConfig() {
                     <div className="pi-bluetooth-section">
                         <section className="pi-bluetooth-actions">
                             <button onClick={handleScan} disabled={scanning} className="btn-primary">
-                                {scanning ? 'Scanning…' : 'Scan for Devices'}
+                                {scanning ? 'Scanning...' : 'Scan for Devices'}
                             </button>
                             <span className="status-message">{message}</span>
                         </section>
@@ -283,7 +347,7 @@ function RaspberryPiConfig() {
                                 <h2 className="section-title">Discovered Devices</h2>
                                 {scanned.length === 0 ? (
                                     <div className="empty-state">
-                                        <p className="muted">No devices discovered — try scanning.</p>
+                                        <p className="muted">No devices discovered - try scanning.</p>
                                     </div>
                                 ) : (
                                     <ul className="device-list">

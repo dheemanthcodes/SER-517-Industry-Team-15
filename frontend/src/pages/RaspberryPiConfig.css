@@ -304,7 +304,7 @@
     margin-bottom: 6px;
 }
 
-.ambulance-id-heading {
+.pi-name-heading {
     font-size: 20px;
     color: #dc2626;
     margin-bottom: 12px;
@@ -394,7 +394,7 @@
     animation: fadeIn 0.3s ease-in-out;
 }
 
-/* Inline BLE device list inside each ambulance card */
+/* Inline BLE device list inside each Pi card */
 .pi-device-list {
     margin-top: 16px;
     padding-top: 16px;
