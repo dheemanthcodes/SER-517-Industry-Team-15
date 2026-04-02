@@ -1,8 +1,6 @@
 const configuredApiBase =
     import.meta.env.VITE_API_URL?.trim() ||
-    (import.meta.env.DEV
-        ? 'http://localhost:8000'
-        : 'https://ser-517-industry-team-15.onrender.com')
+    (import.meta.env.DEV ? '' : 'https://ser-517-industry-team-15.onrender.com')
 
 let apiBase = configuredApiBase
 

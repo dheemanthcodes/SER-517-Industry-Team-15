@@ -291,6 +291,46 @@ def get_dashboard():
     return build_snapshot()
 
 
+@app.delete(
+    "/api/deleteambulance/{vehicle_id}",
+    tags=["Dashboard"],
+    summary="Delete an ambulance without deleting its Pi or BLE records",
+)
+def delete_ambulance(vehicle_id: str):
+    if not vehicle_id:
+        raise HTTPException(status_code=400, detail="'vehicle_id' is required")
+
+    try:
+        vehicle_response = (
+            supabase.table("vehicles")
+            .select("id, unit_number")
+            .eq("id", vehicle_id)
+            .limit(1)
+            .execute()
+        )
+        vehicles = vehicle_response.data or []
+        if not vehicles:
+            raise HTTPException(status_code=404, detail="Ambulance not found")
+
+        # Keep the Raspberry Pi record by detaching it from the ambulance.
+        supabase.table("devices").update({"vehicle_id": None}).eq("vehicle_id", vehicle_id).execute()
+
+        # Keep BLE records by leaving ble_tags untouched and only unassigning the assets.
+        supabase.table("assets").update({"vehicle_id": None}).eq("vehicle_id", vehicle_id).execute()
+
+        supabase.table("vehicles").delete().eq("id", vehicle_id).execute()
+
+        return {
+            "status": "success",
+            "message": "Ambulance deleted successfully",
+            "data": {"id": vehicle_id, "unit_number": vehicles[0].get("unit_number")},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/updateambulance", tags=["Dashboard"], summary="Update an ambulance and its assets")
 def update_ambulance(payload: dict):
     vehicle_id  = payload.get("vehicle_id")

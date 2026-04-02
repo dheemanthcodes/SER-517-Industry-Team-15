@@ -4,6 +4,8 @@ import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
 import apiBase from '../apiBase'
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const normalizeAllDetailsRows = (rows) => {
     const vehiclesById = new Map()
 
@@ -40,7 +42,7 @@ const normalizeAllDetailsRows = (rows) => {
     return Array.from(vehiclesById.values())
 }
 
-function DeviceManagement() {
+function DeviceManagement({ isActive = true }) {
     const [showAddDeviceModal, setShowAddDeviceModal] = useState(false)
 
     const [vehicles, setVehicles] = useState([])
@@ -56,22 +58,46 @@ function DeviceManagement() {
     const [editingVehicleData, setEditingVehicleData] = useState(null)
     const [editingError, setEditingError] = useState('')
 
+    const fetchJsonWithRetry = async (url, options = {}, retries = 1) => {
+        let lastError
+
+        for (let attempt = 0; attempt <= retries; attempt += 1) {
+            try {
+                const res = await fetch(url, {
+                    cache: 'no-store',
+                    ...options
+                })
+
+                const json = await res.json()
+                if (!res.ok) {
+                    throw new Error(json.detail || json.message || 'Request failed')
+                }
+
+                return json
+            } catch (error) {
+                lastError = error
+                if (attempt < retries) {
+                    await delay(300)
+                    continue
+                }
+            }
+        }
+
+        throw lastError
+    }
+
     useEffect(() => {
+        if (!isActive) return
         fetchVehicles()
         fetchPiDetails()
-    }, [])
+    }, [isActive])
 
     const fetchVehicles = async () => {
         try {
             setFetchLoading(true)
             setError(null)
 
-            const res = await fetch(`${apiBase}/api/fetchalldetails`)
-            const json = await res.json()
-
-            if (!res.ok) {
-                throw new Error(json.detail || json.message || 'Failed to load vehicles')
-            }
+            const json = await fetchJsonWithRetry(`${apiBase}/api/fetchalldetails`)
 
             const backendRows = Array.isArray(json?.data) ? json.data : []
             setVehicles(normalizeAllDetailsRows(backendRows))
@@ -88,12 +114,7 @@ function DeviceManagement() {
             setPiLoading(true)
             setPiLoadError('')
 
-            const res = await fetch(`${apiBase}/api/fetchpidetails`)
-            const json = await res.json()
-
-            if (!res.ok) {
-                throw new Error(json.detail || json.message || 'Failed to load Raspberry Pi options')
-            }
+            const json = await fetchJsonWithRetry(`${apiBase}/api/fetchpidetails`)
 
             const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
                 piKey,
@@ -338,7 +359,7 @@ function DeviceManagement() {
             }
         } catch (error) {
             console.error('Error deleting device:', error)
-            setError('Failed to delete device. Please try again.')
+            setError(error?.message || 'Failed to delete device. Please try again.')
         }
     }
 
