@@ -27,8 +27,11 @@ from pi_service import (
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 SUPABASE_URL = os.getenv("supabase_url")
-# Server-side writes should use service role key (falls back to anon for local/dev only).
 SUPABASE_KEY = os.getenv("supabase_service_role_key") or os.getenv("supabase_anonkey")
+FRONTEND_URL = os.getenv(
+    "frontend_url",
+    "https://drug-box-base-station-smart-tracking.vercel.app",
+)
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials: set supabase_url and supabase_service_role_key")
@@ -61,7 +64,7 @@ ALLOWED_DEVICES = {
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -476,7 +479,6 @@ def build_all_details_payload():
         device = device_by_vehicle_id.get(vehicle_id)
         ble_tag = ble_tag_by_asset_id.get(asset_id)
 
-        # Match the SQL's INNER JOIN behavior by only returning fully joined rows.
         if not vehicle or not device or not ble_tag:
             continue
 
@@ -536,4 +538,3 @@ def get_paired_devices_map():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    

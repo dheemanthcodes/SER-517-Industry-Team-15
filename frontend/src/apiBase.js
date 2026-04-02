@@ -1,13 +1,12 @@
-const configuredApiBase = import.meta.env.VITE_API_URL?.trim() || ''
+const configuredApiBase =
+    import.meta.env.VITE_API_URL?.trim() ||
+    'https://ser-517-industry-team-15.onrender.com'
 
 let apiBase = configuredApiBase
 
 try {
     if (configuredApiBase) {
         const parsedUrl = new URL(configuredApiBase)
-
-        // `0.0.0.0` works for binding a dev server, but browsers should call the
-        // current origin so Vite can proxy `/api` requests locally.
         if (parsedUrl.hostname === '0.0.0.0') {
             apiBase = ''
         }
