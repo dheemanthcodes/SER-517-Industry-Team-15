@@ -304,12 +304,14 @@ function DeviceManagement() {
         setError(null)
 
         try {
-            // Delete from Supabase via RPC because direct client writes to
-            // `vehicles`/`assets` are restricted by your RLS policy.
-            const { error: rpcError } = await supabase.rpc('delete_ambulance', {
-                p_vehicle_id: vehicleId
+            const res = await fetch(`${apiBase}/api/deleteambulance/${vehicleId}`, {
+                method: 'DELETE'
             })
-            if (rpcError) throw rpcError
+            const json = await res.json()
+
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Delete failed')
+            }
 
             setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
             if (vehicle) {
@@ -325,6 +327,7 @@ function DeviceManagement() {
 
             // Refresh UI after successful deletion.
             await fetchVehicles()
+            await fetchPiDetails()
 
             if (editingVehicleId === vehicleId) {
                 handleCancelVehicleEdit()
