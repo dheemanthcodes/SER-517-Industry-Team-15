@@ -300,7 +300,7 @@ function App() {
 
             <main className="main-content">
                 {activePage === 'home' && <LandingPage />}
-                {activePage === 'devices' && <DeviceManagement />}
+                {activePage === 'devices' && <DeviceManagement isActive={activePage === 'devices'} />}
                 {activePage === 'events' && <EventHistory />}
                 {activePage === 'raspberry' && <RaspberryPiConfig />}
             </main>
