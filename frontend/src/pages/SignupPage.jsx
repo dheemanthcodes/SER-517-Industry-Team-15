@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../supabaseClient'
+import { authRedirectUrl, supabase } from '../supabaseClient'
 import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
 
 function SignupPage({ onGoToLogin }) {
@@ -11,19 +11,16 @@ function SignupPage({ onGoToLogin }) {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
-  // email check
   const isValidEmail = (email) => {
     const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return pattern.test(email)
   }
 
-  // password check
   const isStrongPassword = (password) => {
     const pattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/
     return pattern.test(password)
   }
 
-  // auth message
   const getSignUpErrorMessage = (message) => {
     if (!message) return 'Sign up failed, please try again'
 
@@ -49,10 +46,8 @@ function SignupPage({ onGoToLogin }) {
     setError('')
     setMessage('')
 
-    // block repeat
     if (loading) return
 
-    // input check
     if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
       setError('All fields are required')
       return
@@ -114,7 +109,7 @@ function SignupPage({ onGoToLogin }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: authRedirectUrl
         }
       })
       if (error) {

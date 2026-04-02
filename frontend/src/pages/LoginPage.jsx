@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabaseClient'
+import { authRedirectUrl, supabase } from '../supabaseClient'
 import { Card, Button, Input, Typography, Divider } from '@supabase/ui'
 
 function LoginPage({ onLogin, onGoToSignUp }) {
@@ -9,13 +9,11 @@ function LoginPage({ onLogin, onGoToSignUp }) {
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
 
-    // email validation check
     const isValidEmail = (email) => {
         const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
         return pattern.test(email)
     }
 
-    // auth message handling
     const getLoginErrorMessage = (message) => {
         if (!message) return 'Login failed, please try again'
 
@@ -36,10 +34,9 @@ function LoginPage({ onLogin, onGoToSignUp }) {
         e.preventDefault()
         setError('')
 
-        // block repeat
         if (loading) return
 
-        // input check
+
         if (!email.trim() || !password.trim()) {
             setError('Email and password are required')
             return
@@ -80,7 +77,7 @@ function LoginPage({ onLogin, onGoToSignUp }) {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: window.location.origin
+                    redirectTo: authRedirectUrl
                 }
             })
             if (error) {
