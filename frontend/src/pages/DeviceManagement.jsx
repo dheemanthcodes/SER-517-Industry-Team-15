@@ -532,6 +532,11 @@ function DeviceManagement({ isActive = true }) {
                             const selectedEditPi = allPis.find(
                                 (pi) => pi.piKey === currentVehicle.raspberry_pi?.name
                             )
+                            const disableAssetEditing =
+                                isEditing &&
+                                !piLoading &&
+                                !currentVehicle.raspberry_pi?.name &&
+                                raspberryPiOptions.length === 0
                             const selectedEditPiDevices = Array.isArray(selectedEditPi?.devices)
                                 ? selectedEditPi.devices
                                 : []
@@ -706,6 +711,19 @@ function DeviceManagement({ isActive = true }) {
                                                 </div>
                                             )}
 
+                                            {disableAssetEditing && (
+                                                <div
+                                                    style={{
+                                                        color: '#92400e',
+                                                        fontSize: '13px',
+                                                        marginTop: '8px'
+                                                    }}
+                                                >
+                                                    No unassigned Raspberry Pis are available. Asset fields are
+                                                    disabled until a Raspberry Pi can be selected.
+                                                </div>
+                                            )}
+
                                             <div className="vehicle-section">
                                                 <div className="vehicle-section-label">BOXES</div>
                                                 {drugBoxes.length === 0 ? (
@@ -728,6 +746,7 @@ function DeviceManagement({ isActive = true }) {
                                                                         {isEditing ? (
                                                                             <Input
                                                                                 value={box.label || ''}
+                                                                                disabled={disableAssetEditing}
                                                                                 onChange={(e) =>
                                                                                     handleAssetLabelChange(
                                                                                         box.id,
@@ -746,6 +765,7 @@ function DeviceManagement({ isActive = true }) {
                                                                         {isEditing ? (
                                                                             <select
                                                                                 value={box.ble_tag?.identifier || ''}
+                                                                                disabled={disableAssetEditing}
                                                                                 onChange={(e) =>
                                                                                     handleAssetBleChange(
                                                                                         box.id,
@@ -815,6 +835,7 @@ function DeviceManagement({ isActive = true }) {
                                                                             {isEditing ? (
                                                                                 <Input
                                                                                     value={pouch.label || ''}
+                                                                                    disabled={disableAssetEditing}
                                                                                     onChange={(e) =>
                                                                                         handleAssetLabelChange(
                                                                                             pouch.id,
@@ -833,6 +854,7 @@ function DeviceManagement({ isActive = true }) {
                                                                             {isEditing ? (
                                                                                 <select
                                                                                     value={pouch.ble_tag?.identifier || ''}
+                                                                                    disabled={disableAssetEditing}
                                                                                     onChange={(e) =>
                                                                                         handleAssetBleChange(
                                                                                             pouch.id,
@@ -872,6 +894,7 @@ function DeviceManagement({ isActive = true }) {
                                                                             {isEditing ? (
                                                                                 <select
                                                                                     value={pouch.parent_asset_id || ''}
+                                                                                    disabled={disableAssetEditing}
                                                                                     onChange={(e) =>
                                                                                         handleAssetParentChange(
                                                                                             pouch.id,
@@ -930,6 +953,7 @@ function DeviceManagement({ isActive = true }) {
                                                         type="button"
                                                         className="btn-primary-save"
                                                         onClick={handleSaveVehicleEdit}
+                                                        disabled={disableAssetEditing}
                                                     >
                                                         Save Changes
                                                     </button>

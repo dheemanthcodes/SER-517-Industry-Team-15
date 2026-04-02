@@ -1272,9 +1272,36 @@ form+.sbui-divider {
     border: 1px solid #eef2f7;
 }
 
+.asset-form-group {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+
+.asset-form-group-disabled {
+    pointer-events: none;
+}
+
 .form-section h4 {
     margin-bottom: 16px;
     color: #333;
+}
+
+.form-section-disabled {
+    background: #f3f4f6;
+    border-color: #e5e7eb;
+    opacity: 0.6;
+}
+
+.form-section-disabled .sbui-input,
+.form-section-disabled .sbui-input input,
+.form-section-disabled input,
+.form-section-disabled select,
+.form-section-disabled textarea,
+.form-section-disabled button {
+    pointer-events: none;
+    cursor: not-allowed;
 }
 
 .form-row {
