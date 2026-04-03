@@ -419,14 +419,61 @@ function DeviceManagement({ isActive = true }) {
         })
     }
 
+    const getFirstAvailableBleAddress = (vehicleData, assetId, assetType) => {
+        const selectedPiName = vehicleData?.raspberry_pi?.name
+        if (!selectedPiName) return ''
+
+        const selectedPi = allPis.find((pi) => pi.piKey === selectedPiName)
+        const devices = Array.isArray(selectedPi?.devices) ? selectedPi.devices : []
+        const bleOptions = [
+            ...devices.filter((device) =>
+                (device.name || '').toLowerCase().includes(
+                    assetType === 'BOX' ? 'box' : 'pouch'
+                )
+            ),
+            ...devices.filter(
+                (device) =>
+                    !(device.name || '').toLowerCase().includes(
+                        assetType === 'BOX' ? 'box' : 'pouch'
+                    )
+            )
+        ]
+
+        const usedIdentifiers = new Set(
+            (vehicleData?.assets || [])
+                .filter((asset) => asset.id !== assetId)
+                .map((asset) => asset?.ble_tag?.identifier || '')
+                .filter(Boolean)
+        )
+
+        const availableDevice = bleOptions.find(
+            (device) => device.address && !usedIdentifiers.has(device.address)
+        )
+
+        return availableDevice?.address || ''
+    }
+
     const handleAssetParentChange = (assetId, parentId) => {
         setEditingVehicleData((prev) => {
             if (!prev) return prev
+
+            const nextParentId = parentId || null
             return {
                 ...prev,
                 assets: (prev.assets || []).map((asset) =>
                     asset.id === assetId
-                        ? { ...asset, parent_asset_id: parentId || null }
+                        ? {
+                            ...asset,
+                            parent_asset_id: nextParentId,
+                            ble_tag: {
+                                ...(asset.ble_tag || {}),
+                                identifier:
+                                    nextParentId &&
+                                    !(asset.ble_tag?.identifier || '').trim()
+                                        ? getFirstAvailableBleAddress(prev, assetId, 'POUCH')
+                                        : asset.ble_tag?.identifier || ''
+                            }
+                        }
                         : asset
                 )
             }
@@ -471,6 +518,7 @@ function DeviceManagement({ isActive = true }) {
                 vehicle_id: vehicleIdToSave,
                 unit_number: unitNumber,
                 station_name: (vehicleDataToSave.station_name || '').trim(),
+                raspberry_pi_name: vehicleDataToSave.raspberry_pi?.name || '',
                 assets: (vehicleDataToSave.assets || []).map((asset) => ({
                     id: asset.id,
                     type: asset.type,
@@ -492,7 +540,14 @@ function DeviceManagement({ isActive = true }) {
             const json = await res.json()
             if (!res.ok) throw new Error(json.detail || json.message || 'Update failed')
 
-            await fetchVehicles()
+            setVehicles((prev) =>
+                prev.map((vehicle) =>
+                    vehicle.id === vehicleIdToSave
+                        ? JSON.parse(JSON.stringify(vehicleDataToSave))
+                        : vehicle
+                )
+            )
+            await fetchPiDetails()
             setExpandedVehicle(vehicleIdToSave)
             setEditingVehicleId(null)
             setEditingVehicleData(null)
@@ -730,12 +785,17 @@ function DeviceManagement({ isActive = true }) {
                             const selectedEditPiDevices = Array.isArray(selectedEditPi?.devices)
                                 ? selectedEditPi.devices
                                 : []
-                            const getBleOptionsForType = (assetType) =>
-                                selectedEditPiDevices.filter((device) =>
+                            const getBleOptionsForType = (assetType) => {
+                                const matchingDevices = selectedEditPiDevices.filter((device) =>
                                     (device.name || '').toLowerCase().includes(
                                         assetType === 'BOX' ? 'box' : 'pouch'
                                     )
                                 )
+
+                                return matchingDevices.length > 0
+                                    ? matchingDevices
+                                    : selectedEditPiDevices
+                            }
 
                             return (
                                 <div key={vehicle.id} className="vehicle-card">
@@ -1155,7 +1215,6 @@ function DeviceManagement({ isActive = true }) {
                                                         type="button"
                                                         className="btn-primary-save"
                                                         onClick={handleSaveVehicleEdit}
-                                                        disabled={disableAssetEditing}
                                                     >
                                                         Save Changes
                                                     </button>

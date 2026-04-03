@@ -336,6 +336,7 @@ def update_ambulance(payload: dict):
     vehicle_id  = payload.get("vehicle_id")
     unit_number = (payload.get("unit_number") or "").strip()
     station_name = (payload.get("station_name") or "").strip()
+    raspberry_pi_name = (payload.get("raspberry_pi_name") or "").strip()
     assets_payload = payload.get("assets", [])
 
     if not vehicle_id:
@@ -344,23 +345,60 @@ def update_ambulance(payload: dict):
         raise HTTPException(status_code=400, detail="'unit_number' is required")
 
     try:
-        rpc_payload = {
-            "p_vehicle_id":  vehicle_id,
-            "p_unit_number": unit_number,
-            "p_station_name": station_name,
-            "p_assets": [
-                {
-                    "id":             a.get("id"),
-                    "type":           a.get("type"),
-                    "label":          a.get("label"),
-                    "ble_identifier": (a.get("ble_identifier") or "").strip(),
-                    "parent_asset_id": a.get("parent_asset_id"),
-                }
-                for a in assets_payload
-            ],
-        }
+        supabase.table("vehicles").update(
+            {
+                "unit_number": unit_number,
+                "station_name": station_name,
+            }
+        ).eq("id", vehicle_id).execute()
 
-        result = supabase.rpc("update_ambulance", rpc_payload).execute()
+        # Keep device assignment in sync with the edit form without relying on the RPC auth context.
+        supabase.table("devices").update({"vehicle_id": None}).eq("vehicle_id", vehicle_id).execute()
+        if raspberry_pi_name:
+            supabase.table("devices").update({"vehicle_id": None}).eq(
+                "device_name", raspberry_pi_name
+            ).neq("vehicle_id", vehicle_id).execute()
+            supabase.table("devices").update({"vehicle_id": vehicle_id}).eq(
+                "device_name", raspberry_pi_name
+            ).execute()
+
+        normalized_assets = [
+            {
+                "id": a.get("id"),
+                "type": (a.get("type") or "").strip(),
+                "label": a.get("label"),
+                "ble_identifier": (a.get("ble_identifier") or "").strip(),
+            }
+            for a in assets_payload
+            if a.get("id")
+        ]
+
+        if normalized_assets:
+            existing_tags = supabase.table("ble_tags").select("id, asset_id").in_(
+                "asset_id", [asset["id"] for asset in normalized_assets]
+            ).execute().data or []
+            tag_by_asset_id = {
+                tag.get("asset_id"): tag for tag in existing_tags if tag.get("asset_id")
+            }
+
+            for asset in normalized_assets:
+                asset_id = asset["id"]
+                asset_type = (asset["type"] or "").upper()
+                supabase.table("assets").update(
+                    {
+                        "label": asset.get("label"),
+                        "vehicle_id": vehicle_id,
+                    }
+                ).eq("id", asset_id).execute()
+
+                tag_payload = {"identifier": asset["ble_identifier"], "asset_id": asset_id}
+                existing_tag = tag_by_asset_id.get(asset_id)
+                if existing_tag and existing_tag.get("id"):
+                    supabase.table("ble_tags").update(tag_payload).eq(
+                        "id", existing_tag["id"]
+                    ).execute()
+                else:
+                    supabase.table("ble_tags").insert(tag_payload).execute()
 
         try:
             supabase.table("alerts").insert(
