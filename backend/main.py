@@ -301,29 +301,19 @@ def delete_ambulance(vehicle_id: str):
         raise HTTPException(status_code=400, detail="'vehicle_id' is required")
 
     try:
-        vehicle_response = (
-            supabase.table("vehicles")
-            .select("id, unit_number")
-            .eq("id", vehicle_id)
-            .limit(1)
-            .execute()
-        )
-        vehicles = vehicle_response.data or []
-        if not vehicles:
-            raise HTTPException(status_code=404, detail="Ambulance not found")
+        result = supabase.rpc("delete_ambulance", {"p_vehicle_id": vehicle_id}).execute()
+        rpc_data = result.data
 
-        # Keep the Raspberry Pi record by detaching it from the ambulance.
-        supabase.table("devices").update({"vehicle_id": None}).eq("vehicle_id", vehicle_id).execute()
+        if isinstance(rpc_data, list):
+            rpc_data = rpc_data[0] if rpc_data else None
 
-        # Keep BLE records by leaving ble_tags untouched and only unassigning the assets.
-        supabase.table("assets").update({"vehicle_id": None}).eq("vehicle_id", vehicle_id).execute()
-
-        supabase.table("vehicles").delete().eq("id", vehicle_id).execute()
+        if not rpc_data:
+            raise HTTPException(status_code=500, detail="Delete ambulance RPC returned no data")
 
         return {
             "status": "success",
             "message": "Ambulance deleted successfully",
-            "data": {"id": vehicle_id, "unit_number": vehicles[0].get("unit_number")},
+            "data": rpc_data,
         }
     except HTTPException:
         raise

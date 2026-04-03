@@ -57,7 +57,11 @@ export const fetchDashboardCounts = async () => {
   const [activeAmbulances, trackedBoxes, openAlerts, activeDevices] =
     await Promise.all([
       fetchCount("vehicles"),
-      fetchCount("assets", (query) => query.eq("type", "BOX")),
+      fetchCount("assets", (query) =>
+        query
+          .eq("type", "BOX")
+          .not("vehicle_id", "is", null)
+      ),
       fetchCount("alerts", (query) => query.eq("status", "OPEN")),
       fetchCount("devices", (query) => query.eq("is_active", true)),
     ])
