@@ -240,7 +240,7 @@ def api_remove_device(payload: dict):
 
 def build_snapshot():
     vehicles = supabase.table("vehicles").select("*").execute().data or []
-    devices = supabase.table("devices").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").eq("is_active", True).execute().data or []
     assets = supabase.table("assets").select("*").execute().data or []
     ble_tags = supabase.table("ble_tags").select("*").execute().data or []
 
@@ -454,9 +454,37 @@ def add_pi_details(payload: PiDetailsPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/deletepi/{pi_name}", tags=["Pi Data"], summary="Delete a Raspberry Pi")
+def delete_pi(pi_name: str):
+    if not pi_name or not pi_name.strip():
+        raise HTTPException(status_code=400, detail="'pi_name' is required")
+
+    normalized_name = pi_name.strip()
+
+    try:
+        result = supabase.rpc("delete_pi_device", {"p_device_name": normalized_name}).execute()
+        rpc_data = result.data
+
+        if isinstance(rpc_data, list):
+            rpc_data = rpc_data[0] if rpc_data else None
+
+        if not rpc_data:
+            raise HTTPException(status_code=500, detail="Pi delete RPC returned no data")
+
+        return {
+            "status": "success",
+            "message": "Raspberry Pi deleted successfully",
+            "data": rpc_data,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def build_device_management_payload():
     vehicles = supabase.table("vehicles").select("*").execute().data or []
-    devices = supabase.table("devices").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").eq("is_active", True).execute().data or []
     assets = supabase.table("assets").select("*").execute().data or []
     ble_tags = supabase.table("ble_tags").select("*").execute().data or []
 
@@ -513,45 +541,71 @@ def build_device_management_payload():
 
 
 def build_all_details_payload():
-    vehicles = supabase.table("vehicles").select("id, unit_number, station_name").execute().data or []
-    devices = supabase.table("devices").select("vehicle_id, device_name, ip_address").execute().data or []
-    assets = supabase.table("assets").select("id, vehicle_id, type, label").execute().data or []
-    ble_tags = supabase.table("ble_tags").select("asset_id, identifier, tag_model").execute().data or []
+    vehicles = supabase.table("vehicles").select("*").execute().data or []
+    devices = supabase.table("devices").select("*").eq("is_active", True).execute().data or []
+    assets = supabase.table("assets").select("*").execute().data or []
+    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
 
-    vehicle_by_id = {vehicle.get("id"): vehicle for vehicle in vehicles if vehicle.get("id")}
     device_by_vehicle_id = {
         device.get("vehicle_id"): device for device in devices if device.get("vehicle_id")
     }
     ble_tag_by_asset_id = {
         ble_tag.get("asset_id"): ble_tag for ble_tag in ble_tags if ble_tag.get("asset_id")
     }
+    assets_by_vehicle_id = {}
 
-    rows = []
     for asset in assets:
         vehicle_id = asset.get("vehicle_id")
-        asset_id = asset.get("id")
+        if not vehicle_id:
+            continue
+        assets_by_vehicle_id.setdefault(vehicle_id, []).append(asset)
 
-        vehicle = vehicle_by_id.get(vehicle_id)
-        device = device_by_vehicle_id.get(vehicle_id)
-        ble_tag = ble_tag_by_asset_id.get(asset_id)
-
-        if not vehicle or not device or not ble_tag:
+    rows = []
+    for vehicle in vehicles:
+        vehicle_id = vehicle.get("id")
+        if not vehicle_id:
             continue
 
-        rows.append(
-            {
-                "vehicle_id": vehicle.get("id"),
-                "unit_number": vehicle.get("unit_number"),
-                "station_name": vehicle.get("station_name"),
-                "device_name": device.get("device_name"),
-                "ip_address": device.get("ip_address"),
-                "asset_id": asset_id,
-                "asset_type": asset.get("type"),
-                "label": asset.get("label"),
-                "ble_identifier": ble_tag.get("identifier"),
-                "tag_model": ble_tag.get("tag_model"),
-            }
-        )
+        device = device_by_vehicle_id.get(vehicle_id)
+        vehicle_assets = assets_by_vehicle_id.get(vehicle_id, [])
+
+        if not vehicle_assets:
+            rows.append(
+                {
+                    "vehicle_id": vehicle.get("id"),
+                    "unit_number": vehicle.get("unit_number"),
+                    "station_name": vehicle.get("station_name"),
+                    "device_name": device.get("device_name") if device else None,
+                    "ip_address": device.get("ip_address") if device else None,
+                    "asset_id": None,
+                    "asset_type": None,
+                    "label": None,
+                    "parent_asset_id": None,
+                    "ble_identifier": None,
+                    "tag_model": None,
+                }
+            )
+            continue
+
+        for asset in vehicle_assets:
+            asset_id = asset.get("id")
+            ble_tag = ble_tag_by_asset_id.get(asset_id)
+
+            rows.append(
+                {
+                    "vehicle_id": vehicle.get("id"),
+                    "unit_number": vehicle.get("unit_number"),
+                    "station_name": vehicle.get("station_name"),
+                    "device_name": device.get("device_name") if device else None,
+                    "ip_address": device.get("ip_address") if device else None,
+                    "asset_id": asset_id,
+                    "asset_type": asset.get("type"),
+                    "label": asset.get("label"),
+                    "parent_asset_id": asset.get("parent_asset_id"),
+                    "ble_identifier": ble_tag.get("identifier") if ble_tag else None,
+                    "tag_model": ble_tag.get("tag_model") if ble_tag else None,
+                }
+            )
 
     return rows
 

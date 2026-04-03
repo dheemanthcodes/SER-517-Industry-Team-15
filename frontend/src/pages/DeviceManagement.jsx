@@ -27,19 +27,76 @@ const normalizeAllDetailsRows = (rows) => {
         }
 
         const vehicle = vehiclesById.get(vehicleId)
-        vehicle.assets.push({
-            id: row?.asset_id || `${vehicleId}-asset-${vehicle.assets.length}`,
-            type: row?.asset_type || '',
-            label: row?.label || '',
-            parent_asset_id: row?.parent_asset_id || null,
-            ble_tag: {
-                identifier: row?.ble_identifier || '',
-                tag_model: row?.tag_model || ''
-            }
-        })
+        if (row?.asset_id) {
+            vehicle.assets.push({
+                id: row.asset_id,
+                type: row?.asset_type || '',
+                label: row?.label || '',
+                parent_asset_id: row?.parent_asset_id || null,
+                ble_tag: {
+                    identifier: row?.ble_identifier || '',
+                    tag_model: row?.tag_model || ''
+                }
+            })
+        }
     }
 
     return Array.from(vehiclesById.values())
+}
+
+const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], bleTags = [] }) => {
+    const deviceByVehicleId = new Map()
+    const bleTagByAssetId = new Map()
+    const assetsByVehicleId = new Map()
+
+    for (const device of Array.isArray(devices) ? devices : []) {
+        if (device?.is_active !== false && device?.vehicle_id) {
+            deviceByVehicleId.set(device.vehicle_id, device)
+        }
+    }
+
+    for (const bleTag of Array.isArray(bleTags) ? bleTags : []) {
+        if (bleTag?.asset_id) {
+            bleTagByAssetId.set(bleTag.asset_id, bleTag)
+        }
+    }
+
+    for (const asset of Array.isArray(assets) ? assets : []) {
+        if (!asset?.vehicle_id) continue
+
+        const vehicleAssets = assetsByVehicleId.get(asset.vehicle_id) || []
+        vehicleAssets.push(asset)
+        assetsByVehicleId.set(asset.vehicle_id, vehicleAssets)
+    }
+
+    return (Array.isArray(vehicles) ? vehicles : []).map((vehicle) => {
+        const vehicleId = vehicle?.id
+        const assignedDevice = deviceByVehicleId.get(vehicleId)
+        const vehicleAssets = assetsByVehicleId.get(vehicleId) || []
+
+        return {
+            id: vehicleId,
+            unit_number: vehicle?.unit_number || '',
+            station_name: vehicle?.station_name || '',
+            raspberry_pi: {
+                name: assignedDevice?.device_name || '',
+                ip_address: assignedDevice?.ip_address || ''
+            },
+            assets: vehicleAssets.map((asset) => {
+                const bleTag = bleTagByAssetId.get(asset?.id)
+                return {
+                    id: asset?.id,
+                    type: asset?.type || '',
+                    label: asset?.label || '',
+                    parent_asset_id: asset?.parent_asset_id || null,
+                    ble_tag: {
+                        identifier: bleTag?.identifier || '',
+                        tag_model: bleTag?.tag_model || ''
+                    }
+                }
+            })
+        }
+    })
 }
 
 function DeviceManagement({ isActive = true }) {
@@ -57,6 +114,7 @@ function DeviceManagement({ isActive = true }) {
     const [editingVehicleId, setEditingVehicleId] = useState(null)
     const [editingVehicleData, setEditingVehicleData] = useState(null)
     const [editingError, setEditingError] = useState('')
+    const [piStatusMessage, setPiStatusMessage] = useState('')
 
     const fetchJsonWithRetry = async (url, options = {}, retries = 1) => {
         let lastError
@@ -86,11 +144,122 @@ function DeviceManagement({ isActive = true }) {
         throw lastError
     }
 
+    const fetchVehiclesFromSupabase = async () => {
+        const [
+            { data: vehiclesData, error: vehiclesError },
+            { data: devicesData, error: devicesError },
+            { data: assetsData, error: assetsError },
+            { data: bleTagsData, error: bleTagsError }
+        ] = await Promise.all([
+            supabase.from('vehicles').select('*'),
+            supabase.from('devices').select('*').neq('is_active', false),
+            supabase.from('assets').select('*'),
+            supabase.from('ble_tags').select('*')
+        ])
+
+        if (vehiclesError) throw vehiclesError
+        if (devicesError) throw devicesError
+        if (assetsError) throw assetsError
+        if (bleTagsError) throw bleTagsError
+
+        return buildVehiclesFromSupabase({
+            vehicles: vehiclesData,
+            devices: devicesData,
+            assets: assetsData,
+            bleTags: bleTagsData
+        })
+    }
+
     useEffect(() => {
         if (!isActive) return
+        const pendingPiStatusMessage = window.sessionStorage.getItem('deviceManagementPiStatusMessage')
+        if (pendingPiStatusMessage) {
+            setPiStatusMessage(pendingPiStatusMessage)
+            window.sessionStorage.removeItem('deviceManagementPiStatusMessage')
+        }
         fetchVehicles()
         fetchPiDetails()
     }, [isActive])
+
+    useEffect(() => {
+        if (!piStatusMessage) return undefined
+
+        const timeoutId = window.setTimeout(() => {
+            setPiStatusMessage('')
+        }, 5000)
+
+        return () => window.clearTimeout(timeoutId)
+    }, [piStatusMessage])
+
+    useEffect(() => {
+        if (!isActive) return undefined
+
+        const refreshDeviceManagementData = () => {
+            fetchVehicles()
+            fetchPiDetails()
+        }
+
+        const subscription = supabase
+            .channel('device-management-live')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'devices' },
+                refreshDeviceManagementData
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'vehicles' },
+                refreshDeviceManagementData
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'assets' },
+                refreshDeviceManagementData
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'ble_tags' },
+                refreshDeviceManagementData
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(subscription)
+        }
+    }, [isActive])
+
+    useEffect(() => {
+        if (!editingVehicleData?.raspberry_pi?.name) return
+        if (piLoading) return
+
+        const assignedPiStillExists = allPis.some(
+            (pi) => pi.piKey === editingVehicleData.raspberry_pi.name
+        )
+
+        if (assignedPiStillExists) return
+
+        const removedPiName = editingVehicleData.raspberry_pi.name
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+
+            return {
+                ...prev,
+                raspberry_pi: {
+                    ...(prev.raspberry_pi || {}),
+                    name: '',
+                    ip_address: ''
+                },
+                assets: (prev.assets || []).map((asset) => ({
+                    ...asset,
+                    ble_tag: {
+                        ...(asset.ble_tag || {}),
+                        identifier: ''
+                    }
+                }))
+            }
+        })
+        setPiStatusMessage(`Raspberry Pi ${removedPiName} was deleted and has been unassigned from this ambulance.`)
+    }, [allPis, editingVehicleData, piLoading])
 
     const fetchVehicles = async () => {
         try {
@@ -100,10 +269,25 @@ function DeviceManagement({ isActive = true }) {
             const json = await fetchJsonWithRetry(`${apiBase}/api/fetchalldetails`)
 
             const backendRows = Array.isArray(json?.data) ? json.data : []
-            setVehicles(normalizeAllDetailsRows(backendRows))
+            const normalizedVehicles = normalizeAllDetailsRows(backendRows)
+            if (normalizedVehicles.length > 0) {
+                setVehicles(normalizedVehicles)
+                return
+            }
+
+            const fallbackVehicles = await fetchVehiclesFromSupabase()
+            setVehicles(fallbackVehicles)
         } catch (err) {
-            console.error('Error fetching vehicles:', err)
-            setError('Failed to load vehicles. Please try again.')
+            console.error('Error fetching vehicles from backend:', err)
+
+            try {
+                const fallbackVehicles = await fetchVehiclesFromSupabase()
+                setVehicles(fallbackVehicles)
+                setError(null)
+            } catch (fallbackError) {
+                console.error('Error fetching vehicles from Supabase:', fallbackError)
+                setError('Failed to load vehicles. Please try again.')
+            }
         } finally {
             setFetchLoading(false)
         }
@@ -480,6 +664,12 @@ function DeviceManagement({ isActive = true }) {
                 </div>
 
                 <div className="vehicles-list">
+                    {piStatusMessage ? (
+                        <div className="vehicles-state vehicles-state--error" style={{ marginBottom: '16px' }}>
+                            <div className="vehicles-state-message">{piStatusMessage}</div>
+                        </div>
+                    ) : null}
+
                     {fetchLoading ? (
                         <div className="vehicles-state vehicles-state--subtle">
                             Loading vehicles...
@@ -679,7 +869,7 @@ function DeviceManagement({ isActive = true }) {
                                                                     ))}
                                                                 </select>
                                                             ) : (
-                                                                currentVehicle.raspberry_pi?.name || '—'
+                                                                currentVehicle.raspberry_pi?.name || 'No Raspberry Pi assigned'
                                                             )}
                                                         </div>
                                                     </div>
@@ -689,15 +879,27 @@ function DeviceManagement({ isActive = true }) {
                                                         <div className="vehicle-field-value">
                                                             {isEditing ? (
                                                                 <div className="vehicle-asset-value">
-                                                                    {currentVehicle.raspberry_pi?.ip_address || '—'}
+                                                                    {currentVehicle.raspberry_pi?.ip_address || 'No Pi assigned'}
                                                                 </div>
                                                             ) : (
-                                                                currentVehicle.raspberry_pi?.ip_address || '—'
+                                                                currentVehicle.raspberry_pi?.ip_address || 'No Pi assigned'
                                                             )}
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {!isEditing && !currentVehicle.raspberry_pi?.name && (
+                                                <div
+                                                    style={{
+                                                        color: '#92400e',
+                                                        fontSize: '13px',
+                                                        marginTop: '8px'
+                                                    }}
+                                                >
+                                                    This ambulance does not currently have a Raspberry Pi assigned.
+                                                </div>
+                                            )}
 
                                             {isEditing && piLoadError && (
                                                 <div
