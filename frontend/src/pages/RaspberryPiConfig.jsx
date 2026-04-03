@@ -3,8 +3,6 @@ import './RaspberryPiConfig.css'
 import apiBase from '../apiBase'
 
 function RaspberryPiConfig() {
-    // pis is an array derived from the backend response object
-    // Each entry: { piKey, ipAddress, devices: [{name, address}] }
     const [pis, setPis] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedPi, setSelectedPi] = useState(null)
@@ -13,6 +11,7 @@ function RaspberryPiConfig() {
     const [newPiName, setNewPiName] = useState('')
     const [newPiIp, setNewPiIp] = useState('')
     const [addPiMessage, setAddPiMessage] = useState('')
+    const [deletingPiKey, setDeletingPiKey] = useState('')
 
     const toggleExpand = (piKey) => {
         setExpandedPis((prev) => {
@@ -40,13 +39,7 @@ function RaspberryPiConfig() {
         }
     }, [])
 
-    /**
-     * Backend returns an object like:
-     * {
-     *   "pi-1": { "ipAddress": "192.168.1.101", "devices": [...] },
-     *   "pi-2": { "ipAddress": "192.168.1.102", "devices": [...] }
-     * }
-     */
+   
     const fetchPiDetails = async () => {
         try {
             const res = await fetch(`${apiBase}/api/fetchpidetails`)
@@ -97,6 +90,52 @@ function RaspberryPiConfig() {
         } catch (e) {
             console.error(e)
             setAddPiMessage('Error connecting to server.')
+        }
+    }
+
+    const handleDeletePi = async (pi) => {
+        if (!pi?.piKey) return
+
+        const confirmed = window.confirm(`Delete Raspberry Pi "${pi.piKey}"?`)
+        if (!confirmed) return
+
+        setDeletingPiKey(pi.piKey)
+        setAddPiMessage(`Deleting ${pi.piKey}...`)
+
+        try {
+            const res = await fetch(`${apiBase}/api/deletepi/${encodeURIComponent(pi.piKey)}`, {
+                method: 'DELETE',
+            })
+            const json = await res.json()
+
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Delete failed')
+            }
+
+            setPis((prev) => prev.filter((item) => item.piKey !== pi.piKey))
+            setExpandedPis((prev) => {
+                const next = new Set(prev)
+                next.delete(pi.piKey)
+                return next
+            })
+
+            const unassignedVehicle = json?.data?.unassigned_vehicle
+            if (selectedPi?.piKey === pi.piKey) {
+                setSelectedPi(null)
+            }
+
+            if (unassignedVehicle?.unit_number) {
+                const statusMessage = `Raspberry Pi ${pi.piKey} deleted. Ambulance ${unassignedVehicle.unit_number} is now unassigned.`
+                window.sessionStorage.setItem('deviceManagementPiStatusMessage', statusMessage)
+                setAddPiMessage(statusMessage)
+            } else {
+                setAddPiMessage(`Raspberry Pi ${pi.piKey} deleted successfully.`)
+            }
+        } catch (e) {
+            console.error('Failed to delete Pi:', e)
+            setAddPiMessage(e?.message || 'Failed to delete Raspberry Pi.')
+        } finally {
+            setDeletingPiKey('')
         }
     }
 
@@ -312,6 +351,13 @@ function RaspberryPiConfig() {
                                                 <button onClick={() => setSelectedPi(pi)} className="btn-primary">
                                                     Manage Bluetooth
                                                 </button>
+                                                <button
+                                                    onClick={() => handleDeletePi(pi)}
+                                                    className="btn-danger-outline"
+                                                    disabled={deletingPiKey === pi.piKey}
+                                                >
+                                                    {deletingPiKey === pi.piKey ? 'Deleting...' : 'Delete Pi'}
+                                                </button>
                                             </div>
                                         </div>
                                     )}
@@ -326,12 +372,21 @@ function RaspberryPiConfig() {
                         <button onClick={() => setSelectedPi(null)} className="btn-outline back-btn">
                             &larr; Back to Devices
                         </button>
-                        <h2 className="section-title" style={{ marginBottom: 0 }}>
-                            {selectedPi.piKey}
-                            <span className="muted" style={{ fontWeight: 400, marginLeft: '8px' }}>
-                                {selectedPi.ipAddress || 'No IP'}
-                            </span>
-                        </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <h2 className="section-title" style={{ marginBottom: 0 }}>
+                                {selectedPi.piKey}
+                                <span className="muted" style={{ fontWeight: 400, marginLeft: '8px' }}>
+                                    {selectedPi.ipAddress || 'No IP'}
+                                </span>
+                            </h2>
+                            <button
+                                onClick={() => handleDeletePi(selectedPi)}
+                                className="btn-danger-outline"
+                                disabled={deletingPiKey === selectedPi.piKey}
+                            >
+                                {deletingPiKey === selectedPi.piKey ? 'Deleting...' : 'Delete Pi'}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="pi-bluetooth-section">
