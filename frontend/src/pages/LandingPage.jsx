@@ -14,6 +14,8 @@ const initialCounts = {
   activeDevices: 0,
 }
 
+const DASHBOARD_REALTIME_TABLES = ["alerts", "vehicles", "assets", "devices"]
+
 const formatDateTime = (value) => {
   if (!value) return "Just now"
   const date = new Date(value)
@@ -54,18 +56,35 @@ function LandingPage() {
   useEffect(() => {
     loadDashboardData({ showLoading: true })
 
+    let refreshTimeout = null
+    const scheduleRefresh = () => {
+      if (refreshTimeout) {
+        window.clearTimeout(refreshTimeout)
+      }
+
+      refreshTimeout = window.setTimeout(() => {
+        loadDashboardData()
+      }, 150)
+    }
+
     const channel = supabase
-      .channel("landing-alerts-live")
-      .on(
+      .channel("landing-dashboard-live")
+
+    DASHBOARD_REALTIME_TABLES.forEach((table) => {
+      channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "alerts" },
-        () => {
-          loadDashboardData()
-        }
+        { event: "*", schema: "public", table },
+        scheduleRefresh
       )
+    })
+
+    channel
       .subscribe()
 
     return () => {
+      if (refreshTimeout) {
+        window.clearTimeout(refreshTimeout)
+      }
       supabase.removeChannel(channel)
     }
   }, [loadDashboardData])
