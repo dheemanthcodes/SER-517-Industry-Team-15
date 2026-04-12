@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react"
-import AlertPopup from "../components/AlertPopup"
 import {
   fetchDashboardCounts,
   fetchOpenAlerts,
@@ -27,7 +26,6 @@ function LandingPage() {
   const [counts, setCounts] = useState(initialCounts)
   const [openAlerts, setOpenAlerts] = useState([])
   const [recentActivity, setRecentActivity] = useState([])
-  const [currentAlert, setCurrentAlert] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -88,21 +86,6 @@ function LandingPage() {
       supabase.removeChannel(channel)
     }
   }, [loadDashboardData])
-
-  useEffect(() => {
-    if (openAlerts.length === 0) {
-      setCurrentAlert(null)
-      return
-    }
-
-    setCurrentAlert((prev) => {
-      if (prev && openAlerts.some((alert) => alert.id === prev.id)) {
-        return prev
-      }
-
-      return openAlerts[0]
-    })
-  }, [openAlerts])
 
   const openAlertsToShow = openAlerts.slice(0, 3)
 
@@ -216,12 +199,6 @@ function LandingPage() {
           </div>
         </div>
       </div>
-
-      <AlertPopup
-        alert={currentAlert}
-        onClose={() => setCurrentAlert(null)}
-        onUpdated={loadDashboardData}
-      />
     </div>
   )
 }

@@ -575,7 +575,6 @@ function DeviceManagement({ isActive = true }) {
 
             setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
             if (vehicle) {
-                // Log a UI-level audit entry (separate from telemetry history).
                 await supabase.from('alerts').insert({
                     asset_id: vehicleId,
                     vehicle_id: vehicleId,
@@ -585,7 +584,6 @@ function DeviceManagement({ isActive = true }) {
                 })
             }
 
-            // Refresh UI after successful deletion.
             await fetchVehicles()
             await fetchPiDetails()
 
