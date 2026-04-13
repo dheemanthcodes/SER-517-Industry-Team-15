@@ -12,12 +12,19 @@ const ALERT_SELECT = `
   vehicles ( unit_number )
 `
 
+const DEVICE_AUDIT_PREFIX = "Device "
+
 const normalizeAlert = (row) => ({
   ...row,
   vehicleLabel: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown vehicle",
   title: row?.reason ?? "Alert",
   description: row?.reason ?? "",
 })
+
+export const isDeviceAuditAlert = (alert) =>
+  (alert?.reason || "").startsWith(DEVICE_AUDIT_PREFIX)
+
+export const isPopupEligibleAlert = (alert) => !isDeviceAuditAlert(alert)
 
 const fetchCount = async (table, buildQuery = (query) => query) => {
   let query = supabase.from(table).select("id", { count: "exact", head: true })
