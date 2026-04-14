@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import {
+    fetchAlertHistory,
+    isDeviceAuditAlert,
+    updateAlertStatus,
+} from '../utils/alertStore'
 
 function EventHistory() {
     const [selectedStatus, setSelectedStatus] = useState('all')
@@ -38,21 +43,17 @@ function EventHistory() {
     const fetchAlerts = useCallback(async () => {
         try {
             setError('')
+            setLoading(true)
 
-            const { data, error: fetchError } = await supabase
-                .from('alerts')
-                .select('id, asset_id, vehicle_id, status, opened_at, reason, vehicles(unit_number)')
-                .order('opened_at', { ascending: false })
-
-            if (fetchError) throw fetchError
-
-            const mappedEvents = (data ?? []).map((alert) => {
-                const isDeviceEvent = (alert.reason || '').startsWith('Device')
+            const alerts = await fetchAlertHistory()
+            const mappedEvents = alerts.map((alert) => {
+                const isDeviceEvent = isDeviceAuditAlert(alert)
 
                 return {
                     id: alert.id,
                     asset_id: alert.asset_id,
-                    vehicle: alert.vehicles?.unit_number || alert.asset_id || 'Unknown',
+                    vehicle: alert.vehicleLabel || alert.asset_id || 'Unknown',
+                    details: alert.reason || alert.description || 'Alert',
                     status: isDeviceEvent ? '' : mapStatusToUI(alert.status),
                     observed_at: new Date(alert.opened_at).toLocaleString(),
                     isDeviceEvent,
@@ -93,27 +94,9 @@ function EventHistory() {
 
         const dbStatus = mapUIToStatus(newStatus)
 
-        const updatePayload = {
-            status: dbStatus,
-        }
-
-        if (dbStatus === 'ACK') {
-            updatePayload.acknowledged_at = new Date().toISOString()
-        }
-
-        if (dbStatus === 'CLOSED') {
-            updatePayload.closed_at = new Date().toISOString()
-        }
-
         try {
             setSavingId(id)
-
-            const { error: updateError } = await supabase
-                .from('alerts')
-                .update(updatePayload)
-                .eq('id', id)
-
-            if (updateError) throw updateError
+            await updateAlertStatus(id, dbStatus)
 
             await fetchAlerts()
         } catch (err) {
@@ -136,6 +119,7 @@ function EventHistory() {
             const matchesSearch =
                 String(event.asset_id ?? '').toLowerCase().includes(searchValue) ||
                 String(event.vehicle ?? '').toLowerCase().includes(searchValue) ||
+                String(event.details ?? '').toLowerCase().includes(searchValue) ||
                 eventStatus.includes(searchValue) ||
                 String(event.observed_at ?? '').toLowerCase().includes(searchValue)
 
@@ -177,6 +161,7 @@ function EventHistory() {
                 <div className="event-history-table-head">
                     <span>Asset ID</span>
                     <span>Vehicle</span>
+                    <span>Alert Details</span>
                     <span>Observed At</span>
                     <span>Status</span>
                 </div>
@@ -188,6 +173,7 @@ function EventHistory() {
                         <div key={event.id} className="event-history-row">
                             <span>{event.asset_id || ''}</span>
                             <span>{event.vehicle}</span>
+                            <span className="event-history-details">{event.details}</span>
                             <span>{event.observed_at}</span>
 
                             {event.status && event.status !== '' ? (
