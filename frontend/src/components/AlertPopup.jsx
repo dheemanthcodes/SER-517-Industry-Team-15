@@ -1,4 +1,5 @@
-import React, { useState } from "react"
+import { useState } from "react"
+import { createPortal } from "react-dom"
 import { updateAlertStatus } from "../utils/alertStore"
 
 const AlertPopup = ({ alert, onClose, onUpdated }) => {
@@ -27,10 +28,10 @@ const AlertPopup = ({ alert, onClose, onUpdated }) => {
     }
   }
 
-  return (
+  const popupContent = (
     <div style={styles.overlay}>
       <div style={styles.popup}>
-        <h3 style={{ marginBottom: "10px" }}>🚨 Alert</h3>
+        <h3 style={{ marginBottom: "10px" }}>Alert</h3>
 
         <p style={{ fontWeight: 700, marginBottom: "10px" }}>{title}</p>
 
@@ -66,6 +67,8 @@ const AlertPopup = ({ alert, onClose, onUpdated }) => {
       </div>
     </div>
   )
+
+  return createPortal(popupContent, document.body)
 }
 
 const styles = {
