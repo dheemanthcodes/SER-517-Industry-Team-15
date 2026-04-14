@@ -7,6 +7,7 @@ import PublicLandingPage from './pages/PublicLandingPage'
 import DeviceManagement from './pages/DeviceManagement'
 import RaspberryPiConfig from './pages/RaspberryPiConfig'
 import EventHistory from './pages/EventHistory'
+import AlertPopupHost from './components/AlertPopupHost'
 
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -154,7 +155,6 @@ function App() {
         try {
             await supabase.auth.signOut()
         } catch (err) {
-            // ignore sign-out errors here
         }
 
         setUser(null)
@@ -221,6 +221,7 @@ function App() {
 
     return (
         <div className="app-layout">
+            <AlertPopupHost />
             <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : 'expanded'}`}>
                 <div className="sidebar-header">
                     {!sidebarCollapsed && (
