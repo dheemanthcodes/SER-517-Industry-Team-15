@@ -188,14 +188,12 @@ async def flush_batches_periodically():
     while True:
         await asyncio.sleep(BATCH_INTERVAL_SECONDS)
 
-        if not pending_results:
-            continue
-
         batch = list(pending_results)
 
         try:
             status, response_body = await asyncio.to_thread(post_batch, batch)
-            del pending_results[:len(batch)]
+            if batch:
+                del pending_results[:len(batch)]
             print(f"Sent batch with {len(batch)} records to backend. Status: {status}")
             print(response_body)
         except error.URLError as exc:
