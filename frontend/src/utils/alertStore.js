@@ -60,6 +60,17 @@ export const fetchRecentAlerts = async (limit = 4) => {
   return (data ?? []).map(normalizeAlert)
 }
 
+export const fetchAlertHistory = async () => {
+  const { data, error } = await supabase
+    .from("alerts")
+    .select(ALERT_SELECT)
+    .order("opened_at", { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map(normalizeAlert)
+}
+
 export const fetchDashboardCounts = async () => {
   const [activeAmbulances, trackedBoxes, openAlerts, activeDevices] =
     await Promise.all([
