@@ -988,7 +988,7 @@ function DeviceManagement({ isActive = true }) {
                                                 <div className="vehicle-section-label">BOXES</div>
                                                 {drugBoxes.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No boxes configured for this ambulance.
+                                                        No boxes configured for this fire ambulance.
                                                     </div>
                                                 ) : (
                                                     <div className="vehicle-assets-grid">
