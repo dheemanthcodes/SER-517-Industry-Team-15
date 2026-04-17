@@ -955,7 +955,7 @@ function DeviceManagement({ isActive = true }) {
                                                         marginTop: '8px'
                                                     }}
                                                 >
-                                                    This ambulance does not currently have a Raspberry Pi assigned.
+                                                    This fire ambulance does not currently have a Raspberry Pi assigned.
                                                 </div>
                                             )}
 
