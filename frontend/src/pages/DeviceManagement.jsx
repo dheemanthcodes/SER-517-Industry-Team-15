@@ -1071,7 +1071,7 @@ function DeviceManagement({ isActive = true }) {
                                                 <div className="vehicle-section-label">POUCHES</div>
                                                 {pouches.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No pouches configured for this ambulance.
+                                                        No pouches configured for this fire ambulance.
                                                     </div>
                                                 ) : (
                                                     <div className="vehicle-assets-grid">

@@ -1,7 +1,6 @@
 import { supabase } from "../supabaseClient"
 
-const ALERT_SELECT = `
-  id,
+const ALERT_SELECT = `id,
   asset_id,
   vehicle_id,
   status,
