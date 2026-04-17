@@ -10,6 +10,7 @@ function SignupPage({ onGoToLogin }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [microsoftLoading, setMicrosoftLoading] = useState(false)
 
   const isValidEmail = (email) => {
     const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -122,6 +123,27 @@ function SignupPage({ onGoToLogin }) {
     }
   }
 
+  const handleMicrosoftSignIn = async () => {
+    try {
+      setMicrosoftLoading(true)
+      setError('')
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: authRedirectUrl,
+          scopes: 'email'
+        }
+      })
+      if (error) {
+        setError('Failed to sign in with Microsoft')
+      }
+    } catch (_err) {
+      setError('An error occurred during Microsoft sign-in')
+    } finally {
+      setMicrosoftLoading(false)
+    }
+  }
+
   return (
     <div className="auth-container auth-split">
       <div className="auth-split-shell">
@@ -188,7 +210,7 @@ function SignupPage({ onGoToLogin }) {
                 />
               </div>
 
-              <Button block htmlType="submit" loading={loading} disabled={loading}>
+              <Button block htmlType="submit" loading={loading} disabled={loading || googleLoading || microsoftLoading}>
                 Sign Up
               </Button>
             </form>
@@ -221,6 +243,23 @@ function SignupPage({ onGoToLogin }) {
               </svg>
               <span className="auth-google-text">
                 {googleLoading ? 'Connecting…' : 'Continue with Google'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="auth-microsoft-btn"
+              onClick={handleMicrosoftSignIn}
+              disabled={microsoftLoading}
+            >
+              <svg className="auth-microsoft-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#f25022" d="M2 2h9.5v9.5H2z" />
+                <path fill="#7fba00" d="M12.5 2H22v9.5h-9.5z" />
+                <path fill="#00a4ef" d="M2 12.5h9.5V22H2z" />
+                <path fill="#ffb900" d="M12.5 12.5H22V22h-9.5z" />
+              </svg>
+              <span className="auth-microsoft-text">
+                {microsoftLoading ? 'Connecting…' : 'Continue with Microsoft'}
               </span>
             </button>
 
