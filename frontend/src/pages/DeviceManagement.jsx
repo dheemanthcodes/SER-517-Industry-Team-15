@@ -759,19 +759,29 @@ function DeviceManagement({ isActive = true }) {
                                 return acc
                             }, {})
 
-                            const raspberryPiOptions = [
-                                ...(currentVehicle.raspberry_pi?.name
-                                    ? [
-                                        {
-                                            piKey: currentVehicle.raspberry_pi.name,
-                                            ipAddress: currentVehicle.raspberry_pi.ip_address || ''
+                            const originalAssignedPi = vehicle.raspberry_pi?.name
+                                ? {
+                                    piKey: vehicle.raspberry_pi.name,
+                                    ipAddress: vehicle.raspberry_pi.ip_address || ''
+                                }
+                                : null
+                            const currentSelectedPi = currentVehicle.raspberry_pi?.name
+                                ? {
+                                    piKey: currentVehicle.raspberry_pi.name,
+                                    ipAddress: currentVehicle.raspberry_pi.ip_address || ''
+                                }
+                                : null
+                            const raspberryPiOptions = Array.from(
+                                [originalAssignedPi, currentSelectedPi, ...availablePis]
+                                    .filter((pi) => pi?.piKey)
+                                    .reduce((optionsByKey, pi) => {
+                                        if (!optionsByKey.has(pi.piKey)) {
+                                            optionsByKey.set(pi.piKey, pi)
                                         }
-                                    ]
-                                    : []),
-                                ...availablePis.filter(
-                                    (pi) => pi.piKey !== currentVehicle.raspberry_pi?.name
-                                )
-                            ]
+                                        return optionsByKey
+                                    }, new Map())
+                                    .values()
+                            )
                             const selectedEditPi = allPis.find(
                                 (pi) => pi.piKey === currentVehicle.raspberry_pi?.name
                             )
