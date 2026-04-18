@@ -4,11 +4,40 @@ except ImportError:
     from config import supabase
 
 
+def _safe_fetch_table_rows(table_name, *, filters=None, required=False):
+    query = supabase.table(table_name).select("*")
+
+    for filter_name, args in filters or []:
+        query = getattr(query, filter_name)(*args)
+
+    try:
+        return query.execute().data or []
+    except Exception as exc:
+        if required:
+            raise RuntimeError(f"Failed to fetch '{table_name}': {exc}") from exc
+
+        print(f"[WARN] Failed to fetch optional table '{table_name}': {exc}")
+        return []
+
+
+def _get_device_ip(device):
+    return (
+        device.get("ip_address")
+        or device.get("ipAddress")
+        or device.get("ip")
+        or device.get("device_ip")
+    )
+
+
 def build_snapshot():
-    vehicles = supabase.table("vehicles").select("*").execute().data or []
-    devices = supabase.table("devices").select("*").eq("is_active", True).execute().data or []
-    assets = supabase.table("assets").select("*").execute().data or []
-    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+    vehicles = _safe_fetch_table_rows("vehicles")
+    devices = _safe_fetch_table_rows(
+        "devices",
+        filters=[("eq", ("is_active", True))],
+        required=True,
+    )
+    assets = _safe_fetch_table_rows("assets")
+    ble_tags = _safe_fetch_table_rows("ble_tags")
 
     vehicle_by_id = {v.get("id"): v for v in vehicles if v.get("id")}
     tag_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
@@ -45,7 +74,7 @@ def build_snapshot():
 
         ui_snapshot[device_name] = {
             "ambulanceId": vehicle.get("unit_number") if vehicle else None,
-            "ipAddress": device.get("ip_address"),
+            "ipAddress": _get_device_ip(device),
             "devices": tracked_devices,
         }
 
@@ -53,10 +82,13 @@ def build_snapshot():
 
 
 def build_device_management_payload():
-    vehicles = supabase.table("vehicles").select("*").execute().data or []
-    devices = supabase.table("devices").select("*").eq("is_active", True).execute().data or []
-    assets = supabase.table("assets").select("*").execute().data or []
-    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+    vehicles = _safe_fetch_table_rows("vehicles", required=True)
+    devices = _safe_fetch_table_rows(
+        "devices",
+        filters=[("eq", ("is_active", True))],
+    )
+    assets = _safe_fetch_table_rows("assets")
+    ble_tags = _safe_fetch_table_rows("ble_tags")
 
     device_by_vehicle = {d.get("vehicle_id"): d for d in devices if d.get("vehicle_id")}
     ble_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
@@ -97,7 +129,7 @@ def build_device_management_payload():
                 "raspberry_pi": {
                     "id": pi_device.get("id"),
                     "name": pi_device.get("device_name"),
-                    "ip_address": pi_device.get("ip_address"),
+                    "ip_address": _get_device_ip(pi_device),
                     "is_active": pi_device.get("is_active"),
                 }
                 if pi_device
@@ -111,10 +143,13 @@ def build_device_management_payload():
 
 
 def build_all_details_payload():
-    vehicles = supabase.table("vehicles").select("*").execute().data or []
-    devices = supabase.table("devices").select("*").eq("is_active", True).execute().data or []
-    assets = supabase.table("assets").select("*").execute().data or []
-    ble_tags = supabase.table("ble_tags").select("*").execute().data or []
+    vehicles = _safe_fetch_table_rows("vehicles", required=True)
+    devices = _safe_fetch_table_rows(
+        "devices",
+        filters=[("eq", ("is_active", True))],
+    )
+    assets = _safe_fetch_table_rows("assets")
+    ble_tags = _safe_fetch_table_rows("ble_tags")
 
     device_by_vehicle_id = {
         device.get("vehicle_id"): device for device in devices if device.get("vehicle_id")
@@ -146,7 +181,7 @@ def build_all_details_payload():
                     "unit_number": vehicle.get("unit_number"),
                     "station_name": vehicle.get("station_name"),
                     "device_name": device.get("device_name") if device else None,
-                    "ip_address": device.get("ip_address") if device else None,
+                    "ip_address": _get_device_ip(device) if device else None,
                     "asset_id": None,
                     "asset_type": None,
                     "label": None,
@@ -167,7 +202,7 @@ def build_all_details_payload():
                     "unit_number": vehicle.get("unit_number"),
                     "station_name": vehicle.get("station_name"),
                     "device_name": device.get("device_name") if device else None,
-                    "ip_address": device.get("ip_address") if device else None,
+                    "ip_address": _get_device_ip(device) if device else None,
                     "asset_id": asset_id,
                     "asset_type": asset.get("type"),
                     "label": asset.get("label"),

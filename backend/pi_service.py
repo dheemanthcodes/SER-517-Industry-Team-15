@@ -5,12 +5,17 @@ PI_HOST = "172.20.10.8"
 PI_USER = "capstone"             
 PI_PASSWORD = "firedept"   
 
-def _ssh_exec(command, timeout=20):
+def _resolve_pi_host(pi_host=None):
+    return (pi_host or PI_HOST).strip()
+
+
+def _ssh_exec(command, timeout=20, pi_host=None):
     import socket
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    target_host = _resolve_pi_host(pi_host)
     try:
-        ssh.connect(PI_HOST, username=PI_USER, password=PI_PASSWORD, timeout=10)
+        ssh.connect(target_host, username=PI_USER, password=PI_PASSWORD, timeout=10)
         stdin, stdout, stderr = ssh.exec_command(command, timeout=timeout)
         out = stdout.read().decode('utf-8').strip()
         err = stderr.read().decode('utf-8').strip()
@@ -20,9 +25,9 @@ def _ssh_exec(command, timeout=20):
     except paramiko.SSHException as e:
         raise Exception(f"SSH connection error: {e}")
     except socket.timeout:
-        raise Exception(f"SSH connection timed out. Pi at {PI_HOST} may be unreachable")
+        raise Exception(f"SSH connection timed out. Pi at {target_host} may be unreachable")
     except socket.error as e:
-        raise Exception(f"Cannot reach Pi at {PI_HOST}. Error: {str(e)}")
+        raise Exception(f"Cannot reach Pi at {target_host}. Error: {str(e)}")
     except Exception as e:
         raise Exception(f"SSH error: {str(e)}")
     finally:
@@ -45,9 +50,9 @@ def parse_bluetoothctl_devices(output):
                 devices.append({'mac_address': mac, 'name': name})
     return devices
 
-def get_bluetooth_data():
+def get_bluetooth_data(pi_host=None):
     try:
-        output, err = _ssh_exec("bluetoothctl devices")
+        output, err = _ssh_exec("bluetoothctl devices", pi_host=pi_host)
         if err:
             print(f"Pi error: {err}")
         devices = parse_bluetoothctl_devices(output)
@@ -57,13 +62,14 @@ def get_bluetooth_data():
     except Exception as e:
         raise Exception(f"Failed to connect or fetch data from Pi: {str(e)}")
 
-def scan_devices(duration=8):
+def scan_devices(duration=8, pi_host=None):
     print(f"[DEBUG] Starting Bluetooth scan...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    target_host = _resolve_pi_host(pi_host)
     try:
         print(f"[DEBUG] Connecting to Pi...")
-        ssh.connect(PI_HOST, username=PI_USER, password=PI_PASSWORD, timeout=30)
+        ssh.connect(target_host, username=PI_USER, password=PI_PASSWORD, timeout=30)
         print(f"[DEBUG] Connected, executing commands...")
         print("[DEBUG] Running: bluetoothctl power on")
         stdin, stdout, stderr = ssh.exec_command("bluetoothctl power on", timeout=30)
@@ -105,9 +111,9 @@ def scan_devices(duration=8):
     finally:
         ssh.close()
 
-def get_paired_devices():
+def get_paired_devices(pi_host=None):
     try:
-        output, err = _ssh_exec("bluetoothctl paired-devices")
+        output, err = _ssh_exec("bluetoothctl paired-devices", pi_host=pi_host)
         if err:
             print(f"Pi paired-devices error: {err}")
         devices = parse_bluetoothctl_devices(output)
@@ -115,20 +121,20 @@ def get_paired_devices():
     except Exception as e:
         raise Exception(f"Failed to get paired devices: {str(e)}")
 
-def pair_device(mac_address):
+def pair_device(mac_address, pi_host=None):
     try:
         cmd = f'bash -lc "bluetoothctl pair {mac_address}; bluetoothctl trust {mac_address}; bluetoothctl connect {mac_address}"'
-        output, err = _ssh_exec(cmd, timeout=30)
+        output, err = _ssh_exec(cmd, timeout=30, pi_host=pi_host)
         if err:
             print(f"Pi pair error: {err}")
         return {'output': output, 'error': err}
     except Exception as e:
         raise Exception(f"Failed to pair device {mac_address}: {str(e)}")
 
-def remove_device(mac_address):
+def remove_device(mac_address, pi_host=None):
     try:
         cmd = f'bluetoothctl disconnect {mac_address}; bluetoothctl untrust {mac_address}; bluetoothctl remove {mac_address}'
-        output, err = _ssh_exec(cmd, timeout=30)
+        output, err = _ssh_exec(cmd, timeout=30, pi_host=pi_host)
         if err:
             print(f"Pi remove error: {err}")
         if "not available" in output.lower() or "failed" in output.lower():
