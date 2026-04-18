@@ -955,7 +955,7 @@ function DeviceManagement({ isActive = true }) {
                                                         marginTop: '8px'
                                                     }}
                                                 >
-                                                    This ambulance does not currently have a Raspberry Pi assigned.
+                                                    This fire ambulance does not currently have a Raspberry Pi assigned.
                                                 </div>
                                             )}
 
@@ -988,7 +988,7 @@ function DeviceManagement({ isActive = true }) {
                                                 <div className="vehicle-section-label">BOXES</div>
                                                 {drugBoxes.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No boxes configured for this ambulance.
+                                                        No boxes configured for this fire ambulance.
                                                     </div>
                                                 ) : (
                                                     <div className="vehicle-assets-grid">
@@ -1071,7 +1071,7 @@ function DeviceManagement({ isActive = true }) {
                                                 <div className="vehicle-section-label">POUCHES</div>
                                                 {pouches.length === 0 ? (
                                                     <div className="vehicle-empty-row">
-                                                        No pouches configured for this ambulance.
+                                                        No pouches configured for this fire ambulance.
                                                     </div>
                                                 ) : (
                                                     <div className="vehicle-assets-grid">
