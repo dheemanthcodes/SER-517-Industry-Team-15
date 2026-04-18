@@ -2,6 +2,54 @@ import React, { useState, useEffect } from 'react'
 import './RaspberryPiConfig.css'
 import apiBase from '../apiBase'
 
+const BLE_SLOT_COUNT = 4
+
+const normalizeMacAddress = (value) => String(value || '').trim().replace(/-/g, ':').toUpperCase()
+
+const isValidMacAddress = (value) => {
+    const normalized = normalizeMacAddress(value)
+    return /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(normalized)
+}
+
+const areSlotsComplete = (slot) => Boolean((slot?.name || '').trim()) && Boolean((slot?.mac || '').trim())
+
+const buildEmptyBleSlots = () =>
+    Array.from({ length: BLE_SLOT_COUNT }, () => ({
+        name: '',
+        mac: '',
+    }))
+
+const buildBleSlotsFromPiDevices = (pi) => {
+    const devices = Array.isArray(pi?.devices) ? pi.devices : []
+    const slots = devices.slice(0, BLE_SLOT_COUNT).map((device) => ({
+        name: device?.name || '',
+        mac: device?.address || '',
+    }))
+
+    while (slots.length < BLE_SLOT_COUNT) {
+        slots.push({ name: '', mac: '' })
+    }
+
+    return slots
+}
+
+const sanitizeBleSlots = (slots) => {
+    if (!Array.isArray(slots)) return null
+
+    const normalized = slots.slice(0, BLE_SLOT_COUNT).map((slot) => ({
+        name: typeof slot?.name === 'string' ? slot.name : '',
+        mac: typeof slot?.mac === 'string' ? slot.mac : '',
+    }))
+
+    while (normalized.length < BLE_SLOT_COUNT) {
+        normalized.push({ name: '', mac: '' })
+    }
+
+    return normalized
+}
+
+const bleSlotsStorageKey = (piKey) => `piBleSlots:${piKey}`
+
 function RaspberryPiConfig() {
     const [pis, setPis] = useState([])
     const [loading, setLoading] = useState(true)
@@ -25,12 +73,11 @@ function RaspberryPiConfig() {
         })
     }
 
-    const [scanned, setScanned] = useState([])
-    const [paired, setPaired] = useState([])
-    const [scanning, setScanning] = useState(false)
     const [message, setMessage] = useState('')
-    const [manualMac, setManualMac] = useState('')
+    const [bleSlots, setBleSlots] = useState(() => buildEmptyBleSlots())
+    const [editingSlots, setEditingSlots] = useState(() => new Set())
     const hasFetched = React.useRef(false)
+    const skipBleSlotsPersist = React.useRef(false)
 
     useEffect(() => {
         if (!hasFetched.current) {
@@ -155,104 +202,112 @@ function RaspberryPiConfig() {
 
     useEffect(() => {
         if (selectedPi) {
-            fetchPaired()
-        } else {
-            setScanned([])
-            setPaired([])
+            skipBleSlotsPersist.current = true
+
+            let nextSlots = buildBleSlotsFromPiDevices(selectedPi)
+            const piKey = selectedPi?.piKey
+            if (piKey) {
+                try {
+                    const raw = window.localStorage.getItem(bleSlotsStorageKey(piKey))
+                    if (raw) {
+                        const parsed = JSON.parse(raw)
+                        nextSlots = sanitizeBleSlots(parsed) || nextSlots
+                    }
+                } catch (e) {
+                    console.warn('Failed to load BLE config from storage:', e)
+                }
+            }
+
+            setBleSlots(nextSlots)
+            setEditingSlots(() => {
+                const next = new Set()
+                for (let i = 0; i < BLE_SLOT_COUNT; i++) {
+                    if (!areSlotsComplete(nextSlots[i])) next.add(i)
+                }
+                return next
+            })
             setMessage('')
-            setManualMac('')
+        } else {
+            setMessage('')
+            skipBleSlotsPersist.current = true
+            setBleSlots(buildEmptyBleSlots())
+            setEditingSlots(new Set())
         }
     }, [selectedPi])
 
-    const fetchPaired = async () => {
-        try {
-            const res = await fetch(`${apiBase}/api/bluetooth/paired?pi_ip=${selectedPi?.ipAddress || ''}`)
-            const json = await res.json()
-            if (json.status === 'success') setPaired(json.data.paired_devices || [])
-        } catch (e) {
-            console.error(e)
+    useEffect(() => {
+        const piKey = selectedPi?.piKey
+        if (!piKey) return
+
+        if (skipBleSlotsPersist.current) {
+            skipBleSlotsPersist.current = false
+            return
         }
+
+        try {
+            window.localStorage.setItem(bleSlotsStorageKey(piKey), JSON.stringify(bleSlots))
+        } catch (e) {
+            console.warn('Failed to persist BLE config to storage:', e)
+        }
+    }, [bleSlots, selectedPi?.piKey])
+
+    const updateBleSlot = (index, patch) => {
+        setBleSlots((prev) =>
+            prev.map((slot, slotIndex) => (slotIndex === index ? { ...slot, ...patch } : slot))
+        )
     }
 
-    const handleScan = async () => {
-        setScanning(true)
-        setMessage('Scanning for devices...')
-        try {
-            const res = await fetch(`${apiBase}/api/bluetooth/scan?seconds=6&pi_ip=${selectedPi?.ipAddress || ''}`)
-            let json
-            try {
-                json = await res.json()
-            } catch (parseError) {
-                setMessage('Scan failed: Invalid response from server')
-                setScanning(false)
-                return
-            }
-
-            if (json.status === 'success') {
-                const deviceCount = (json.data?.scanned_devices || []).length
-                if (deviceCount === 0) {
-                    setMessage('No devices found')
-                } else {
-                    setScanned(json.data.scanned_devices || [])
-                    setMessage(`Found ${deviceCount} devices`)
-                }
-            } else {
-                const errorMsg = json.detail || json.message || 'Unknown error'
-                setMessage(`Scan failed: ${errorMsg}`)
-            }
-        } catch (e) {
-            console.error(e)
-            setMessage('Scan error: ' + e.message)
-        }
-        setScanning(false)
+    const setEditingSlot = (index, enabled) => {
+        setEditingSlots((prev) => {
+            const next = new Set(prev)
+            if (enabled) next.add(index)
+            else next.delete(index)
+            return next
+        })
     }
 
-    const handlePair = async (mac) => {
-        setMessage(`Pairing ${mac}...`)
-        try {
-            const res = await fetch(`${apiBase}/api/bluetooth/pair`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' }),
-            })
-            const json = await res.json()
-            if (json.status === 'success') {
-                setMessage('Paired successfully')
-                fetchPaired()
-            } else {
-                setMessage('Pair failed')
-            }
-        } catch (e) {
-            console.error(e)
-            setMessage('Pair error')
+    const getMacUniquenessError = (slots, currentIndex) => {
+        const current = normalizeMacAddress(slots?.[currentIndex]?.mac)
+        if (!current) return ''
+
+        for (let i = 0; i < (slots || []).length; i++) {
+            if (i === currentIndex) continue
+            const other = normalizeMacAddress(slots?.[i]?.mac)
+            if (other && other === current) return 'MAC address is already used in another slot.'
         }
+        return ''
     }
 
-    const handleRemove = async (mac) => {
-        setMessage(`Removing ${mac}...`)
-        try {
-            const res = await fetch(`${apiBase}/api/bluetooth/remove`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mac, pi_ip: selectedPi?.ipAddress || '' }),
-            })
-            const json = await res.json()
-            if (json.status === 'success') {
-                setMessage('Removed successfully')
-                fetchPaired()
-            } else {
-                setMessage('Remove failed')
-            }
-        } catch (e) {
-            console.error(e)
-            setMessage('Remove error')
+    const handleSaveSlot = (index) => {
+        const slot = bleSlots[index]
+        const name = (slot?.name || '').trim()
+        const mac = normalizeMacAddress(slot?.mac)
+
+        if (!name || !mac) {
+            setMessage('Both name and MAC address are required.')
+            return
         }
+
+        if (!isValidMacAddress(mac)) {
+            setMessage('Enter a valid MAC address (AA:BB:CC:DD:EE:FF).')
+            return
+        }
+
+        const duplicateError = getMacUniquenessError(bleSlots, index)
+        if (duplicateError) {
+            setMessage(duplicateError)
+            return
+        }
+
+        updateBleSlot(index, { name, mac })
+        setEditingSlot(index, false)
+        setMessage('Saved.')
     }
 
-    const handleManualPair = async () => {
-        if (!manualMac) return setMessage('Enter a MAC address')
-        await handlePair(manualMac)
-        setManualMac('')
+    const handleClearSlot = (index) => {
+        updateBleSlot(index, { name: '', mac: '' })
+        setEditingSlot(index, true)
+        setMessage('')
     }
 
     return (
@@ -352,7 +407,7 @@ function RaspberryPiConfig() {
 
                                             <div className="pi-card-actions">
                                                 <button onClick={() => setSelectedPi(pi)} className="btn-primary">
-                                                    Manage Bluetooth
+                                                    Manage Bluetooth Devices
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeletePi(pi)}
@@ -393,71 +448,88 @@ function RaspberryPiConfig() {
                     </div>
 
                     <div className="pi-bluetooth-section">
-                        <section className="pi-bluetooth-actions">
-                            <button onClick={handleScan} disabled={scanning} className="btn-primary">
-                                {scanning ? 'Scanning...' : 'Scan for Devices'}
-                            </button>
-                            <span className="status-message">{message}</span>
-                        </section>
-
                         <section className="device-lists-container">
                             <div className="device-column">
-                                <h2 className="section-title">Discovered Devices</h2>
-                                {scanned.length === 0 ? (
-                                    <div className="empty-state">
-                                        <p className="muted">No devices discovered - try scanning.</p>
-                                    </div>
-                                ) : (
-                                    <ul className="device-list">
-                                        {scanned.map((d, i) => (
-                                            <li key={d.mac_address || i} className="device-row hover-lift">
-                                                <div className="device-info">
-                                                    <strong>{d.name || d.raw_output || 'Unknown'}</strong>
-                                                    <div className="muted">{d.mac_address || d.raw_output}</div>
-                                                </div>
-                                                <div className="device-actions">
-                                                    <button onClick={() => handlePair(d.mac_address)} className="btn btn-outline">
-                                                        Pair
-                                                    </button>
-                                                </div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                                <div className="manual-entry-box">
-                                    <input
-                                        className="mac-input"
-                                        placeholder="MAC (e.g. AA:BB:CC...)"
-                                        value={manualMac}
-                                        onChange={(e) => setManualMac(e.target.value)}
-                                    />
-                                    <button onClick={handleManualPair} className="btn-secondary">Add Device</button>
-                                </div>
-                            </div>
+                                <h2 className="section-title">Configure BLE Devices</h2>
+                                <p className="ble-config-help">
+                                    Configure up to {BLE_SLOT_COUNT} BLE devices for this Pi. Enter a device name and
+                                    MAC address.
+                                </p>
 
-                            <div className="device-column">
-                                <h2 className="section-title">Paired Devices</h2>
-                                {paired.length === 0 ? (
-                                    <div className="empty-state">
-                                        <p className="muted">No paired devices.</p>
-                                    </div>
-                                ) : (
-                                    <ul className="device-list">
-                                        {paired.map((p, i) => (
-                                            <li key={p.mac_address || i} className="device-row hover-lift paired-row">
-                                                <div className="device-info">
-                                                    <strong>{p.name || p.raw_output || 'Unknown'}</strong>
-                                                    <div className="muted">{p.mac_address || p.raw_output}</div>
-                                                </div>
-                                                <div className="device-actions">
-                                                    <button onClick={() => handleRemove(p.mac_address)} className="btn-danger">
-                                                        Remove
-                                                    </button>
-                                                </div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
+                                {message ? <div className="status-message ble-config-message">{message}</div> : null}
+
+                                <div className="ble-config-list">
+                                    {bleSlots.map((slot, index) => {
+                                        const isEditing = editingSlots.has(index) || !areSlotsComplete(slot)
+                                        const isMacValid = !slot.mac || isValidMacAddress(slot.mac)
+                                        const duplicateError = getMacUniquenessError(bleSlots, index)
+                                        const showDuplicateError = Boolean(slot.mac) && Boolean(duplicateError)
+
+                                        return (
+                                            <div key={index} className="ble-config-row">
+                                                <div className="ble-config-index">{index + 1}</div>
+                                                {isEditing ? (
+                                                    <>
+                                                        <input
+                                                            className="ble-name-input"
+                                                            placeholder="Device name (e.g. Drug Box 1)"
+                                                            value={slot.name}
+                                                            onChange={(e) => updateBleSlot(index, { name: e.target.value })}
+                                                        />
+                                                        <input
+                                                            className={`mac-input ${isMacValid && !showDuplicateError ? '' : 'ble-input-invalid'}`}
+                                                            placeholder="MAC (e.g. AA:BB:CC:DD:EE:FF)"
+                                                            value={slot.mac}
+                                                            onChange={(e) => updateBleSlot(index, { mac: e.target.value })}
+                                                            onBlur={() =>
+                                                                updateBleSlot(index, { mac: normalizeMacAddress(slot.mac) })
+                                                            }
+                                                        />
+                                                        <div className="ble-config-row-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="btn-primary"
+                                                                onClick={() => handleSaveSlot(index)}
+                                                            >
+                                                                Add BLE Device
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <div className="ble-config-summary">
+                                                            <strong>{slot.name}</strong>
+                                                            <div className="muted">{normalizeMacAddress(slot.mac)}</div>
+                                                        </div>
+                                                        <div className="ble-config-row-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="btn-secondary"
+                                                                onClick={() => setEditingSlot(index, true)}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="btn-danger"
+                                                                onClick={() => handleClearSlot(index)}
+                                                            >
+                                                                Clear
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                )}
+
+                                                {showDuplicateError ? (
+                                                    <div className="ble-inline-error">{duplicateError}</div>
+                                                ) : null}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+
+                                <div className="ble-config-actions">
+                                </div>
                             </div>
                         </section>
                     </div>

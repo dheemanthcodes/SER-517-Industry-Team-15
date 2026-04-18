@@ -394,6 +394,140 @@
     animation: fadeIn 0.3s ease-in-out;
 }
 
+.ble-config-help {
+    margin: -6px 0 16px 0;
+    color: #6b7280;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.ble-config-message {
+    margin-bottom: 16px;
+    display: block;
+}
+
+.ble-config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ble-config-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px 20px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    transition: box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+.ble-config-row:focus-within {
+    border-color: #d1d5db;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+.ble-config-index {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.ble-name-input {
+    flex: 1;
+    min-width: 190px;
+    padding: 10px 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ble-name-input:focus {
+    outline: none;
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.ble-config-row .mac-input {
+    min-width: 220px;
+}
+
+.ble-input-invalid {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
+}
+
+.ble-config-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+}
+
+.ble-config-summary {
+    flex: 1;
+    min-width: 260px;
+}
+
+.ble-config-summary strong {
+    display: block;
+    font-size: 16px;
+    color: #111827;
+    margin-bottom: 4px;
+}
+
+.ble-config-summary .muted {
+    font-size: 13px;
+    color: #6b7280;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.ble-inline-error {
+    width: 100%;
+    color: #b91c1c;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 6px;
+}
+
+.ble-status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+    background: #f9fafb;
+    white-space: nowrap;
+}
+
+.ble-status-pill.paired {
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.ble-config-actions {
+    margin-top: 16px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
 /* Inline BLE device list inside each Pi card */
 .pi-device-list {
     margin-top: 16px;
