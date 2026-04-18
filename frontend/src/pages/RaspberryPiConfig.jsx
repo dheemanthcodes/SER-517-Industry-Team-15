@@ -44,6 +44,9 @@ function RaspberryPiConfig() {
         try {
             const res = await fetch(`${apiBase}/api/fetchpidetails`)
             const json = await res.json()
+            if (!res.ok) {
+                throw new Error(json.detail || json.message || 'Failed to fetch Pi details')
+            }
 
             const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
                 piKey,
