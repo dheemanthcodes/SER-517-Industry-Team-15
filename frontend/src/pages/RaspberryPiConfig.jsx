@@ -35,47 +35,6 @@ const buildBleSlotsFromPiDevices = (pi) => {
     return slots
 }
 
-const sanitizeBleSlots = (slots) => {
-    if (!Array.isArray(slots)) return null
-
-    const normalized = slots.slice(0, BLE_SLOT_COUNT).map((slot) => ({
-        id: typeof slot?.id === 'string' ? slot.id : '',
-        name: typeof slot?.name === 'string' ? slot.name : '',
-        mac: typeof slot?.mac === 'string' ? slot.mac : '',
-    }))
-
-    while (normalized.length < BLE_SLOT_COUNT) {
-        normalized.push({ id: '', name: '', mac: '' })
-    }
-
-    return normalized
-}
-
-const mergeStoredBleSlots = (baseSlots, storedSlots) => {
-    const normalizedBase = sanitizeBleSlots(baseSlots) || buildEmptyBleSlots()
-    const normalizedStored = sanitizeBleSlots(storedSlots)
-
-    if (!normalizedStored) return normalizedBase
-
-    return normalizedBase.map((slot, index) => {
-        const storedSlot = normalizedStored[index]
-        const hasDatabaseRecord = Boolean(slot?.id)
-        const hasStoredValues = Boolean((storedSlot?.name || '').trim()) || Boolean((storedSlot?.mac || '').trim())
-
-        if (hasDatabaseRecord || !hasStoredValues) {
-            return slot
-        }
-
-        return {
-            id: slot?.id || '',
-            name: storedSlot?.name || '',
-            mac: storedSlot?.mac || '',
-        }
-    })
-}
-
-const bleSlotsStorageKey = (piKey) => `piBleSlots:${piKey}`
-
 function RaspberryPiConfig() {
     const [pis, setPis] = useState([])
     const [loading, setLoading] = useState(true)
@@ -105,7 +64,6 @@ function RaspberryPiConfig() {
     const [savingSlotIndex, setSavingSlotIndex] = useState(-1)
     const [clearingSlotIndex, setClearingSlotIndex] = useState(-1)
     const hasFetched = React.useRef(false)
-    const skipBleSlotsPersist = React.useRef(false)
 
     useEffect(() => {
         if (!hasFetched.current) {
@@ -117,7 +75,9 @@ function RaspberryPiConfig() {
    
     const fetchPiDetails = async () => {
         try {
-            const res = await fetch(`${apiBase}/api/fetchpidetails`)
+            const res = await fetch(`${apiBase}/api/fetchpidetails`, {
+                cache: 'no-store',
+            })
             const json = await res.json()
             if (!res.ok) {
                 throw new Error(json.detail || json.message || 'Failed to fetch Pi details')
@@ -234,23 +194,7 @@ function RaspberryPiConfig() {
 
     useEffect(() => {
         if (selectedPi) {
-            skipBleSlotsPersist.current = true
-
-            const dbBackedSlots = buildBleSlotsFromPiDevices(selectedPi)
-            let nextSlots = dbBackedSlots
-            const piKey = selectedPi?.piKey
-            if (piKey) {
-                try {
-                    const raw = window.localStorage.getItem(bleSlotsStorageKey(piKey))
-                    if (raw) {
-                        const parsed = JSON.parse(raw)
-                        nextSlots = mergeStoredBleSlots(dbBackedSlots, parsed)
-                    }
-                } catch (e) {
-                    console.warn('Failed to load BLE config from storage:', e)
-                }
-            }
-
+            const nextSlots = buildBleSlotsFromPiDevices(selectedPi)
             setBleSlots(nextSlots)
             setEditingSlots(() => {
                 const next = new Set()
@@ -262,27 +206,10 @@ function RaspberryPiConfig() {
             setMessage('')
         } else {
             setMessage('')
-            skipBleSlotsPersist.current = true
             setBleSlots(buildEmptyBleSlots())
             setEditingSlots(new Set())
         }
     }, [selectedPi])
-
-    useEffect(() => {
-        const piKey = selectedPi?.piKey
-        if (!piKey) return
-
-        if (skipBleSlotsPersist.current) {
-            skipBleSlotsPersist.current = false
-            return
-        }
-
-        try {
-            window.localStorage.setItem(bleSlotsStorageKey(piKey), JSON.stringify(bleSlots))
-        } catch (e) {
-            console.warn('Failed to persist BLE config to storage:', e)
-        }
-    }, [bleSlots, selectedPi?.piKey])
 
     const updateBleSlot = (index, patch) => {
         setBleSlots((prev) =>
