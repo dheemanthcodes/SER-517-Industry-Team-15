@@ -15,6 +15,7 @@ const areSlotsComplete = (slot) => Boolean((slot?.name || '').trim()) && Boolean
 
 const buildEmptyBleSlots = () =>
     Array.from({ length: BLE_SLOT_COUNT }, () => ({
+        id: '',
         name: '',
         mac: '',
     }))
@@ -22,12 +23,13 @@ const buildEmptyBleSlots = () =>
 const buildBleSlotsFromPiDevices = (pi) => {
     const devices = Array.isArray(pi?.devices) ? pi.devices : []
     const slots = devices.slice(0, BLE_SLOT_COUNT).map((device) => ({
+        id: device?.id || '',
         name: device?.name || '',
         mac: device?.address || '',
     }))
 
     while (slots.length < BLE_SLOT_COUNT) {
-        slots.push({ name: '', mac: '' })
+        slots.push({ id: '', name: '', mac: '' })
     }
 
     return slots
@@ -37,12 +39,13 @@ const sanitizeBleSlots = (slots) => {
     if (!Array.isArray(slots)) return null
 
     const normalized = slots.slice(0, BLE_SLOT_COUNT).map((slot) => ({
+        id: typeof slot?.id === 'string' ? slot.id : '',
         name: typeof slot?.name === 'string' ? slot.name : '',
         mac: typeof slot?.mac === 'string' ? slot.mac : '',
     }))
 
     while (normalized.length < BLE_SLOT_COUNT) {
-        normalized.push({ name: '', mac: '' })
+        normalized.push({ id: '', name: '', mac: '' })
     }
 
     return normalized
@@ -98,6 +101,7 @@ function RaspberryPiConfig() {
 
             const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
                 piKey,
+                id: piData?.id || '',
                 ipAddress: piData?.ipAddress,
                 devices: Array.isArray(piData?.devices) ? piData.devices : [],
             }))
@@ -129,6 +133,7 @@ function RaspberryPiConfig() {
             if (res.ok) {
                 const newPi = {
                     piKey: newPiName.trim(),
+                    id: '',
                     ipAddress: newPiIp.trim(),
                     devices: [],
                 }
@@ -314,7 +319,9 @@ function RaspberryPiConfig() {
                 body: JSON.stringify({
                     name,
                     identifier: mac,
+                    pi_id: selectedPi?.id || '',
                     pi_name: selectedPi?.piKey || '',
+                    ble_tag_id: slot?.id || '',
                 }),
             })
 
@@ -331,7 +338,7 @@ function RaspberryPiConfig() {
                 return
             }
 
-            updateBleSlot(index, { name, mac })
+            updateBleSlot(index, { id: json?.data?.ble_tag_id || slot?.id || '', name, mac })
             setEditingSlot(index, false)
             setMessage('Saved.')
             const refreshedPis = await fetchPiDetails()

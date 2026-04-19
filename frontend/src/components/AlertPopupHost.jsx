@@ -3,10 +3,34 @@ import { supabase } from "../supabaseClient"
 import AlertPopup from "./AlertPopup"
 import { fetchOpenAlerts, isPopupEligibleAlert } from "../utils/alertStore"
 
+const PREVIEW_ALERT_ID = "preview-alert-popup"
+
+const getPreviewAlertFromQuery = () => {
+  if (typeof window === "undefined") return null
+
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("previewAlert") !== "1") {
+    return null
+  }
+
+  return {
+    id: PREVIEW_ALERT_ID,
+    asset_id: "Preview Asset",
+    vehicle_id: null,
+    vehicleLabel: "AMB-101",
+    status: "OPEN",
+    reason: "Preview alert popup",
+    title: "Preview alert popup",
+    description: "This is a sample alert for UI preview.",
+    opened_at: new Date().toISOString(),
+  }
+}
+
 function AlertPopupHost() {
   const [openAlerts, setOpenAlerts] = useState([])
   const [currentAlert, setCurrentAlert] = useState(null)
   const [dismissedAlertIds, setDismissedAlertIds] = useState([])
+  const [previewAlert, setPreviewAlert] = useState(() => getPreviewAlertFromQuery())
 
   const loadOpenAlerts = useCallback(async () => {
     try {
@@ -37,8 +61,11 @@ function AlertPopupHost() {
   }, [loadOpenAlerts])
 
   const actionableAlerts = useMemo(
-    () => openAlerts.filter((alert) => !dismissedAlertIds.includes(alert.id)),
-    [dismissedAlertIds, openAlerts]
+    () =>
+      [...(previewAlert ? [previewAlert] : []), ...openAlerts].filter(
+        (alert) => !dismissedAlertIds.includes(alert.id)
+      ),
+    [dismissedAlertIds, openAlerts, previewAlert]
   )
 
   useEffect(() => {
@@ -62,6 +89,10 @@ function AlertPopupHost() {
         setDismissedAlertIds((currentIds) =>
           currentIds.includes(prev.id) ? currentIds : [...currentIds, prev.id]
         )
+      }
+
+      if (prev?.id === PREVIEW_ALERT_ID) {
+        setPreviewAlert(null)
       }
 
       return null

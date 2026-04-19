@@ -27,6 +27,8 @@ class BleTagUpsertPayload(BaseModel):
     name: str
     identifier: str
     pi_name: Optional[str] = None
+    pi_id: Optional[str] = None
+    ble_tag_id: Optional[str] = None
 
 
 def _normalize_ble_identifier(value: str) -> str:
@@ -168,6 +170,8 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
     name = (payload.name or "").strip()
     identifier = _normalize_ble_identifier(payload.identifier)
     pi_name = (payload.pi_name or "").strip()
+    pi_id = (payload.pi_id or "").strip()
+    ble_tag_id = (payload.ble_tag_id or "").strip()
 
     if not name:
         raise HTTPException(status_code=400, detail="'name' is required")
@@ -179,105 +183,99 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
         raise HTTPException(status_code=400, detail="Identifier must be a valid MAC address")
 
     try:
-        device = None
-        vehicle_id = None
-        if pi_name:
-            devices = (
-                supabase.table("devices")
-                .select("id, device_name, vehicle_id")
-                .eq("device_name", pi_name)
-                .limit(1)
-                .execute()
-                .data
-                or []
-            )
-            device = devices[0] if devices else None
-            if not device:
-                raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
-            vehicle_id = device.get("vehicle_id")
+        if not pi_id and not pi_name:
+            raise HTTPException(status_code=400, detail="'pi_id' or 'pi_name' is required")
 
-        assets = (
-            supabase.table("assets")
-            .select("id, vehicle_id, type, label")
-            .eq("label", name)
-            .execute()
-            .data
-            or []
-        )
-        asset = next(
-            (
-                row
-                for row in assets
-                if row.get("vehicle_id") == vehicle_id and str(row.get("type") or "").upper() == "BOX"
-            ),
-            None,
-        )
+        device_query = supabase.table("devices").select("id, device_name, vehicle_id").limit(1)
+        if pi_id:
+            device_query = device_query.eq("id", pi_id)
+        else:
+            device_query = device_query.eq("device_name", pi_name)
 
-        if not asset:
-            inserted = (
-                supabase.table("assets")
-                .insert(
-                    {
-                        "vehicle_id": vehicle_id,
-                        "type": "BOX",
-                        "label": name,
-                        "is_active": True,
-                    }
-                )
-                .execute()
-                .data
-                or []
-            )
-            asset = inserted[0] if inserted else None
+        devices = device_query.execute().data or []
+        device = devices[0] if devices else None
+        if not device:
+            raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
 
-        if not asset or not asset.get("id"):
-            raise HTTPException(status_code=500, detail="Failed to create asset record for BLE tag")
-
-        asset_id = asset["id"]
+        asset_id = device["id"]
+        vehicle_id = device.get("vehicle_id")
 
         conflicting = (
             supabase.table("ble_tags")
-            .select("asset_id, identifier")
+            .select("id, asset_id, identifier")
             .eq("identifier", identifier)
             .execute()
             .data
             or []
         )
-        if any(row.get("asset_id") != asset_id for row in conflicting if row.get("asset_id")):
+        if any(
+            row.get("id") != ble_tag_id and row.get("asset_id") != asset_id
+            for row in conflicting
+            if row.get("asset_id")
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="This MAC address is already assigned to another asset.",
             )
 
-        existing = (
-            supabase.table("ble_tags")
-            .select("id, asset_id, identifier, tag_model")
-            .eq("asset_id", asset_id)
-            .execute()
-            .data
-            or []
-        )
+        existing_tag = None
+        if ble_tag_id:
+            existing = (
+                supabase.table("ble_tags")
+                .select("id, asset_id, identifier, tag_model")
+                .eq("id", ble_tag_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            existing_tag = existing[0] if existing else None
+            if not existing_tag:
+                raise HTTPException(status_code=404, detail="BLE tag record was not found")
+            if existing_tag.get("asset_id") != asset_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="BLE tag record does not belong to the selected Raspberry Pi",
+                )
+        else:
+            existing = (
+                supabase.table("ble_tags")
+                .select("id, asset_id, identifier, tag_model")
+                .eq("asset_id", asset_id)
+                .eq("identifier", identifier)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            existing_tag = existing[0] if existing else None
 
-        if existing:
+        if existing_tag:
             supabase.table("ble_tags").update(
                 {
                     "identifier": identifier,
                     "tag_model": name,
                 }
-            ).eq("asset_id", asset_id).execute()
+            ).eq("id", existing_tag["id"]).execute()
         else:
-            supabase.table("ble_tags").insert(
-                {
-                    "asset_id": asset_id,
-                    "identifier": identifier,
-                    "tag_model": name,
-                }
-            ).execute()
+            inserted = (
+                supabase.table("ble_tags").insert(
+                    {
+                        "asset_id": asset_id,
+                        "identifier": identifier,
+                        "tag_model": name,
+                    }
+                ).execute().data
+                or []
+            )
+            existing_tag = inserted[0] if inserted else None
 
         return {
             "status": "success",
             "data": {
                 "asset_id": asset_id,
+                "device_id": asset_id,
+                "ble_tag_id": existing_tag.get("id") if existing_tag else None,
                 "pi_name": pi_name or None,
                 "vehicle_id": vehicle_id,
                 "name": name,

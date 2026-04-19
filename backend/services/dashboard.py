@@ -36,43 +36,40 @@ def build_snapshot():
         filters=[("eq", ("is_active", True))],
         required=True,
     )
-    assets = _safe_fetch_table_rows("assets")
     ble_tags = _safe_fetch_table_rows("ble_tags")
 
     vehicle_by_id = {v.get("id"): v for v in vehicles if v.get("id")}
-    tag_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
-    assets_by_vehicle = {}
-
-    for asset in assets:
-        vehicle_id = asset.get("vehicle_id")
-        if not vehicle_id:
+    tags_by_device_id = {}
+    for tag in ble_tags:
+        device_id = tag.get("asset_id")
+        if not device_id:
             continue
-        assets_by_vehicle.setdefault(vehicle_id, []).append(asset)
+        tags_by_device_id.setdefault(device_id, []).append(tag)
 
     ui_snapshot = {}
 
     for device in devices:
+        device_id = device.get("id")
         device_name = (device.get("device_name") or "").strip()
         if not device_name:
             continue
 
         vehicle_id = device.get("vehicle_id")
         vehicle = vehicle_by_id.get(vehicle_id) if vehicle_id else None
-        vehicle_assets = assets_by_vehicle.get(vehicle_id, []) if vehicle_id else []
 
         tracked_devices = []
-        for asset in vehicle_assets:
-            tag = tag_by_asset.get(asset.get("id"))
-            if not tag:
-                continue
+        for tag in tags_by_device_id.get(device_id, []):
             tracked_devices.append(
                 {
-                    "name": asset.get("label") or tag.get("asset_id"),
+                    "id": tag.get("id"),
+                    "name": tag.get("tag_model") or tag.get("identifier") or "Unnamed BLE Device",
                     "address": tag.get("identifier"),
+                    "asset_id": tag.get("asset_id"),
                 }
             )
 
         ui_snapshot[device_name] = {
+            "id": device_id,
             "ambulanceId": vehicle.get("unit_number") if vehicle else None,
             "ipAddress": _get_device_ip(device),
             "devices": tracked_devices,

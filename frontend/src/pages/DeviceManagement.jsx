@@ -302,6 +302,7 @@ function DeviceManagement({ isActive = true }) {
 
             const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
                 piKey,
+                id: piData?.id || '',
                 ambulanceId: piData?.ambulanceId || '',
                 ipAddress: piData?.ipAddress || '',
                 devices: Array.isArray(piData?.devices) ? piData.devices : []
