@@ -758,6 +758,7 @@ function DeviceManagement({ isActive = true }) {
                                 acc[box.id] = box.label
                                 return acc
                             }, {})
+                            const formatBoxAssignmentLabel = (_, index) => `Box ${index + 1}`
 
                             const originalAssignedPi = vehicle.raspberry_pi?.name
                                 ? {
@@ -1179,7 +1180,13 @@ function DeviceManagement({ isActive = true }) {
                                                                                             key={box.id}
                                                                                             value={box.id}
                                                                                         >
-                                                                                            {box.label}
+                                                                                            {formatBoxAssignmentLabel(
+                                                                                                box.label,
+                                                                                                drugBoxes.findIndex(
+                                                                                                    (drugBox) =>
+                                                                                                        drugBox.id === box.id
+                                                                                                )
+                                                                                            )}
                                                                                         </option>
                                                                                     ))}
                                                                                 </select>
