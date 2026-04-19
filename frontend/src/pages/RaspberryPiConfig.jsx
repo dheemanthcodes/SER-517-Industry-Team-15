@@ -76,6 +76,7 @@ function RaspberryPiConfig() {
     const [message, setMessage] = useState('')
     const [bleSlots, setBleSlots] = useState(() => buildEmptyBleSlots())
     const [editingSlots, setEditingSlots] = useState(() => new Set())
+    const [savingSlotIndex, setSavingSlotIndex] = useState(-1)
     const hasFetched = React.useRef(false)
     const skipBleSlotsPersist = React.useRef(false)
 
@@ -275,7 +276,9 @@ function RaspberryPiConfig() {
         return ''
     }
 
-    const handleSaveSlot = (index) => {
+    const handleSaveSlot = async (index) => {
+        if (savingSlotIndex === index) return
+
         const slot = bleSlots[index]
         const name = (slot?.name || '').trim()
         const mac = normalizeMacAddress(slot?.mac)
@@ -296,9 +299,38 @@ function RaspberryPiConfig() {
             return
         }
 
-        updateBleSlot(index, { name, mac })
-        setEditingSlot(index, false)
-        setMessage('Saved.')
+        setSavingSlotIndex(index)
+        setMessage('Saving...')
+
+        try {
+            const res = await fetch(`${apiBase}/api/ble-tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, identifier: mac }),
+            })
+
+            let json = null
+            try {
+                json = await res.json()
+            } catch (e) {
+                json = null
+            }
+
+            if (!res.ok) {
+                const detail = json?.detail || json?.message || res.statusText || 'Unknown error'
+                setMessage(`Save failed: ${detail}`)
+                return
+            }
+
+            updateBleSlot(index, { name, mac })
+            setEditingSlot(index, false)
+            setMessage('Saved.')
+        } catch (e) {
+            console.error(e)
+            setMessage('Save failed: could not reach server.')
+        } finally {
+            setSavingSlotIndex(-1)
+        }
     }
 
     const handleClearSlot = (index) => {
@@ -486,9 +518,10 @@ function RaspberryPiConfig() {
                                                             <button
                                                                 type="button"
                                                                 className="btn-primary"
+                                                                disabled={savingSlotIndex === index}
                                                                 onClick={() => handleSaveSlot(index)}
                                                             >
-                                                                Add BLE Device
+                                                                {savingSlotIndex === index ? 'Saving...' : 'Add BLE Device'}
                                                             </button>
                                                         </div>
                                                     </>
