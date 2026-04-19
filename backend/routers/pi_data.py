@@ -26,6 +26,7 @@ class PiDetailsPayload(BaseModel):
 class BleTagUpsertPayload(BaseModel):
     name: str
     identifier: str
+    pi_name: Optional[str] = None
 
 
 def _normalize_ble_identifier(value: str) -> str:
@@ -166,6 +167,7 @@ def delete_pi(pi_name: str):
 def upsert_ble_tag(payload: BleTagUpsertPayload):
     name = (payload.name or "").strip()
     identifier = _normalize_ble_identifier(payload.identifier)
+    pi_name = (payload.pi_name or "").strip()
 
     if not name:
         raise HTTPException(status_code=400, detail="'name' is required")
@@ -177,14 +179,36 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
         raise HTTPException(status_code=400, detail="Identifier must be a valid MAC address")
 
     try:
-        # ble_tags.asset_id is intended to reference assets.id. To align with the schema,
-        # we create (or reuse) an asset row keyed by its label.
-        assets = supabase.table("assets").select("id, vehicle_id, type, label").eq("label", name).execute().data or []
+        device = None
+        vehicle_id = None
+        if pi_name:
+            devices = (
+                supabase.table("devices")
+                .select("id, device_name, vehicle_id")
+                .eq("device_name", pi_name)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            device = devices[0] if devices else None
+            if not device:
+                raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
+            vehicle_id = device.get("vehicle_id")
+
+        assets = (
+            supabase.table("assets")
+            .select("id, vehicle_id, type, label")
+            .eq("label", name)
+            .execute()
+            .data
+            or []
+        )
         asset = next(
             (
                 row
                 for row in assets
-                if row.get("vehicle_id") is None and str(row.get("type") or "").upper() == "BOX"
+                if row.get("vehicle_id") == vehicle_id and str(row.get("type") or "").upper() == "BOX"
             ),
             None,
         )
@@ -194,10 +218,9 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
                 supabase.table("assets")
                 .insert(
                     {
-                        "vehicle_id": None,
+                        "vehicle_id": vehicle_id,
                         "type": "BOX",
                         "label": name,
-                        "parent_asset_id": None,
                         "is_active": True,
                     }
                 )
@@ -228,7 +251,7 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
 
         existing = (
             supabase.table("ble_tags")
-            .select("id, asset_id, identifier")
+            .select("id, asset_id, identifier, tag_model")
             .eq("asset_id", asset_id)
             .execute()
             .data
@@ -236,16 +259,30 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
         )
 
         if existing:
-            supabase.table("ble_tags").update({"identifier": identifier}).eq("asset_id", asset_id).execute()
+            supabase.table("ble_tags").update(
+                {
+                    "identifier": identifier,
+                    "tag_model": name,
+                }
+            ).eq("asset_id", asset_id).execute()
         else:
-            supabase.table("ble_tags").insert({"asset_id": asset_id, "identifier": identifier}).execute()
+            supabase.table("ble_tags").insert(
+                {
+                    "asset_id": asset_id,
+                    "identifier": identifier,
+                    "tag_model": name,
+                }
+            ).execute()
 
         return {
             "status": "success",
             "data": {
                 "asset_id": asset_id,
+                "pi_name": pi_name or None,
+                "vehicle_id": vehicle_id,
                 "name": name,
                 "identifier": identifier,
+                "tag_model": name,
             },
         }
     except HTTPException:

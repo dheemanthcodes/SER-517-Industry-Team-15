@@ -102,8 +102,10 @@ function RaspberryPiConfig() {
                 devices: Array.isArray(piData?.devices) ? piData.devices : [],
             }))
             setPis(piList)
+            return piList
         } catch (e) {
             console.error('Failed to fetch Pi details:', e)
+            return []
         } finally {
             setLoading(false)
         }
@@ -309,7 +311,11 @@ function RaspberryPiConfig() {
             const res = await fetch(`${apiBase}/api/ble-tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, identifier: mac }),
+                body: JSON.stringify({
+                    name,
+                    identifier: mac,
+                    pi_name: selectedPi?.piKey || '',
+                }),
             })
 
             let json = null
@@ -328,6 +334,12 @@ function RaspberryPiConfig() {
             updateBleSlot(index, { name, mac })
             setEditingSlot(index, false)
             setMessage('Saved.')
+            const refreshedPis = await fetchPiDetails()
+            setSelectedPi((prev) => {
+                if (!prev?.piKey) return prev
+                const refreshedPi = refreshedPis.find((pi) => pi.piKey === prev.piKey)
+                return refreshedPi || prev
+            })
         } catch (e) {
             console.error(e)
             setMessage('Save failed: could not reach server.')
