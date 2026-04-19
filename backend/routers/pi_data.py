@@ -145,6 +145,33 @@ def delete_pi(pi_name: str):
     normalized_name = pi_name.strip()
 
     try:
+        device_rows = (
+            supabase.table("devices")
+            .select("id, device_name")
+            .eq("device_name", normalized_name)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        device = device_rows[0] if device_rows else None
+        if not device:
+            raise HTTPException(status_code=404, detail="Raspberry Pi was not found")
+
+        device_id = device.get("id")
+        deleted_ble_tags = []
+        if device_id:
+            deleted_ble_tags = (
+                supabase.table("ble_tags")
+                .select("id")
+                .eq("asset_id", device_id)
+                .execute()
+                .data
+                or []
+            )
+            if deleted_ble_tags:
+                supabase.table("ble_tags").delete().eq("asset_id", device_id).execute()
+
         result = supabase.rpc("delete_pi_device", {"p_device_name": normalized_name}).execute()
         rpc_data = result.data
 
@@ -157,7 +184,10 @@ def delete_pi(pi_name: str):
         return {
             "status": "success",
             "message": "Raspberry Pi deleted successfully",
-            "data": rpc_data,
+            "data": {
+                **(rpc_data or {}),
+                "deleted_ble_tag_count": len(deleted_ble_tags),
+            },
         }
     except HTTPException:
         raise
