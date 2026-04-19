@@ -51,6 +51,29 @@ const sanitizeBleSlots = (slots) => {
     return normalized
 }
 
+const mergeStoredBleSlots = (baseSlots, storedSlots) => {
+    const normalizedBase = sanitizeBleSlots(baseSlots) || buildEmptyBleSlots()
+    const normalizedStored = sanitizeBleSlots(storedSlots)
+
+    if (!normalizedStored) return normalizedBase
+
+    return normalizedBase.map((slot, index) => {
+        const storedSlot = normalizedStored[index]
+        const hasDatabaseRecord = Boolean(slot?.id)
+        const hasStoredValues = Boolean((storedSlot?.name || '').trim()) || Boolean((storedSlot?.mac || '').trim())
+
+        if (hasDatabaseRecord || !hasStoredValues) {
+            return slot
+        }
+
+        return {
+            id: slot?.id || '',
+            name: storedSlot?.name || '',
+            mac: storedSlot?.mac || '',
+        }
+    })
+}
+
 const bleSlotsStorageKey = (piKey) => `piBleSlots:${piKey}`
 
 function RaspberryPiConfig() {
@@ -213,14 +236,15 @@ function RaspberryPiConfig() {
         if (selectedPi) {
             skipBleSlotsPersist.current = true
 
-            let nextSlots = buildBleSlotsFromPiDevices(selectedPi)
+            const dbBackedSlots = buildBleSlotsFromPiDevices(selectedPi)
+            let nextSlots = dbBackedSlots
             const piKey = selectedPi?.piKey
             if (piKey) {
                 try {
                     const raw = window.localStorage.getItem(bleSlotsStorageKey(piKey))
                     if (raw) {
                         const parsed = JSON.parse(raw)
-                        nextSlots = sanitizeBleSlots(parsed) || nextSlots
+                        nextSlots = mergeStoredBleSlots(dbBackedSlots, parsed)
                     }
                 } catch (e) {
                     console.warn('Failed to load BLE config from storage:', e)

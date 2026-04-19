@@ -361,6 +361,24 @@ def delete_ble_tag(ble_tag_id: str, pi_id: str | None = None, pi_name: str | Non
 
         supabase.table("ble_tags").delete().eq("id", normalized_ble_tag_id).execute()
 
+        remaining_rows = (
+            supabase.table("ble_tags")
+            .select("id")
+            .eq("id", normalized_ble_tag_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if remaining_rows:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "BLE tag delete was blocked or affected no rows. "
+                    "Check Supabase RLS delete policies or backend credentials."
+                ),
+            )
+
         return {
             "status": "success",
             "data": {
