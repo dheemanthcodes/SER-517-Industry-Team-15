@@ -23,6 +23,22 @@ class PiDetailsPayload(BaseModel):
     ip_address: str
 
 
+class BleTagUpsertPayload(BaseModel):
+    name: str
+    identifier: str
+
+
+def _normalize_ble_identifier(value: str) -> str:
+    return str(value or "").strip().replace("-", ":").upper()
+
+
+def _is_valid_mac_address(value: str) -> bool:
+    import re
+
+    normalized = _normalize_ble_identifier(value)
+    return bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", normalized))
+
+
 @router.post(
     "/api/pi/data",
     summary="Receive Raspberry Pi JSON data",
@@ -139,6 +155,98 @@ def delete_pi(pi_name: str):
             "status": "success",
             "message": "Raspberry Pi deleted successfully",
             "data": rpc_data,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/ble-tags", summary="Upsert a BLE tag by name + MAC")
+def upsert_ble_tag(payload: BleTagUpsertPayload):
+    name = (payload.name or "").strip()
+    identifier = _normalize_ble_identifier(payload.identifier)
+
+    if not name:
+        raise HTTPException(status_code=400, detail="'name' is required")
+
+    if not identifier:
+        raise HTTPException(status_code=400, detail="'identifier' is required")
+
+    if not _is_valid_mac_address(identifier):
+        raise HTTPException(status_code=400, detail="Identifier must be a valid MAC address")
+
+    try:
+        # ble_tags.asset_id is intended to reference assets.id. To align with the schema,
+        # we create (or reuse) an asset row keyed by its label.
+        assets = supabase.table("assets").select("id, vehicle_id, type, label").eq("label", name).execute().data or []
+        asset = next(
+            (
+                row
+                for row in assets
+                if row.get("vehicle_id") is None and str(row.get("type") or "").upper() == "BOX"
+            ),
+            None,
+        )
+
+        if not asset:
+            inserted = (
+                supabase.table("assets")
+                .insert(
+                    {
+                        "vehicle_id": None,
+                        "type": "BOX",
+                        "label": name,
+                        "parent_asset_id": None,
+                        "is_active": True,
+                    }
+                )
+                .execute()
+                .data
+                or []
+            )
+            asset = inserted[0] if inserted else None
+
+        if not asset or not asset.get("id"):
+            raise HTTPException(status_code=500, detail="Failed to create asset record for BLE tag")
+
+        asset_id = asset["id"]
+
+        conflicting = (
+            supabase.table("ble_tags")
+            .select("asset_id, identifier")
+            .eq("identifier", identifier)
+            .execute()
+            .data
+            or []
+        )
+        if any(row.get("asset_id") != asset_id for row in conflicting if row.get("asset_id")):
+            raise HTTPException(
+                status_code=409,
+                detail="This MAC address is already assigned to another asset.",
+            )
+
+        existing = (
+            supabase.table("ble_tags")
+            .select("id, asset_id, identifier")
+            .eq("asset_id", asset_id)
+            .execute()
+            .data
+            or []
+        )
+
+        if existing:
+            supabase.table("ble_tags").update({"identifier": identifier}).eq("asset_id", asset_id).execute()
+        else:
+            supabase.table("ble_tags").insert({"asset_id": asset_id, "identifier": identifier}).execute()
+
+        return {
+            "status": "success",
+            "data": {
+                "asset_id": asset_id,
+                "name": name,
+                "identifier": identifier,
+            },
         }
     except HTTPException:
         raise
