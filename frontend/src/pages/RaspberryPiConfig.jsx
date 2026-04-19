@@ -469,7 +469,7 @@ function RaspberryPiConfig() {
                                                     <>
                                                         <input
                                                             className="ble-name-input"
-                                                            placeholder="Device name (e.g. Drug Box 1)"
+                                                            placeholder="Device name (e.g. BLE Device 1)"
                                                             value={slot.name}
                                                             onChange={(e) => updateBleSlot(index, { name: e.target.value })}
                                                         />
