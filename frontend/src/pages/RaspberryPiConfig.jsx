@@ -80,6 +80,7 @@ function RaspberryPiConfig() {
     const [bleSlots, setBleSlots] = useState(() => buildEmptyBleSlots())
     const [editingSlots, setEditingSlots] = useState(() => new Set())
     const [savingSlotIndex, setSavingSlotIndex] = useState(-1)
+    const [clearingSlotIndex, setClearingSlotIndex] = useState(-1)
     const hasFetched = React.useRef(false)
     const skipBleSlotsPersist = React.useRef(false)
 
@@ -355,10 +356,57 @@ function RaspberryPiConfig() {
         }
     }
 
-    const handleClearSlot = (index) => {
-        updateBleSlot(index, { name: '', mac: '' })
-        setEditingSlot(index, true)
-        setMessage('')
+    const handleClearSlot = async (index) => {
+        const slot = bleSlots[index]
+
+        if (!slot?.id) {
+            updateBleSlot(index, { id: '', name: '', mac: '' })
+            setEditingSlot(index, true)
+            setMessage('')
+            return
+        }
+
+        setClearingSlotIndex(index)
+        setMessage('Deleting...')
+
+        try {
+            const params = new URLSearchParams()
+            if (selectedPi?.id) params.set('pi_id', selectedPi.id)
+            else if (selectedPi?.piKey) params.set('pi_name', selectedPi.piKey)
+
+            const res = await fetch(
+                `${apiBase}/api/ble-tags/${encodeURIComponent(slot.id)}?${params.toString()}`,
+                { method: 'DELETE' }
+            )
+
+            let json = null
+            try {
+                json = await res.json()
+            } catch (e) {
+                json = null
+            }
+
+            if (!res.ok) {
+                const detail = json?.detail || json?.message || res.statusText || 'Unknown error'
+                setMessage(`Delete failed: ${detail}`)
+                return
+            }
+
+            updateBleSlot(index, { id: '', name: '', mac: '' })
+            setEditingSlot(index, true)
+            setMessage('Deleted.')
+            const refreshedPis = await fetchPiDetails()
+            setSelectedPi((prev) => {
+                if (!prev?.piKey) return prev
+                const refreshedPi = refreshedPis.find((pi) => pi.piKey === prev.piKey)
+                return refreshedPi || prev
+            })
+        } catch (e) {
+            console.error(e)
+            setMessage('Delete failed: could not reach server.')
+        } finally {
+            setClearingSlotIndex(-1)
+        }
     }
 
     return (
@@ -540,7 +588,7 @@ function RaspberryPiConfig() {
                                                             <button
                                                                 type="button"
                                                                 className="btn-primary"
-                                                                disabled={savingSlotIndex === index}
+                                                                disabled={savingSlotIndex === index || clearingSlotIndex === index}
                                                                 onClick={() => handleSaveSlot(index)}
                                                             >
                                                                 {savingSlotIndex === index ? 'Saving...' : 'Add BLE Device'}
@@ -557,6 +605,7 @@ function RaspberryPiConfig() {
                                                             <button
                                                                 type="button"
                                                                 className="btn-secondary"
+                                                                disabled={clearingSlotIndex === index}
                                                                 onClick={() => setEditingSlot(index, true)}
                                                             >
                                                                 Edit
@@ -564,9 +613,10 @@ function RaspberryPiConfig() {
                                                             <button
                                                                 type="button"
                                                                 className="btn-danger"
+                                                                disabled={clearingSlotIndex === index}
                                                                 onClick={() => handleClearSlot(index)}
                                                             >
-                                                                Clear
+                                                                {clearingSlotIndex === index ? 'Deleting...' : 'Clear'}
                                                             </button>
                                                         </div>
                                                     </>

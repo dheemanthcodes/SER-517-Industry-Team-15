@@ -287,3 +287,57 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/ble-tags/{ble_tag_id}", summary="Delete a BLE tag")
+def delete_ble_tag(ble_tag_id: str, pi_id: str | None = None, pi_name: str | None = None):
+    normalized_ble_tag_id = (ble_tag_id or "").strip()
+    normalized_pi_id = (pi_id or "").strip()
+    normalized_pi_name = (pi_name or "").strip()
+
+    if not normalized_ble_tag_id:
+        raise HTTPException(status_code=400, detail="'ble_tag_id' is required")
+
+    try:
+        existing = (
+            supabase.table("ble_tags")
+            .select("id, asset_id, identifier, tag_model")
+            .eq("id", normalized_ble_tag_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        ble_tag = existing[0] if existing else None
+        if not ble_tag:
+            raise HTTPException(status_code=404, detail="BLE tag record was not found")
+
+        if normalized_pi_id or normalized_pi_name:
+            device_query = supabase.table("devices").select("id, device_name").limit(1)
+            if normalized_pi_id:
+                device_query = device_query.eq("id", normalized_pi_id)
+            else:
+                device_query = device_query.eq("device_name", normalized_pi_name)
+
+            devices = device_query.execute().data or []
+            device = devices[0] if devices else None
+            if not device:
+                raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
+            if ble_tag.get("asset_id") != device.get("id"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="BLE tag record does not belong to the selected Raspberry Pi",
+                )
+
+        supabase.table("ble_tags").delete().eq("id", normalized_ble_tag_id).execute()
+
+        return {
+            "status": "success",
+            "data": {
+                "ble_tag_id": normalized_ble_tag_id,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
