@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import './RaspberryPiConfig.css'
 import apiBase from '../apiBase'
+import { normalizePiSnapshot } from '../utils/piSnapshot'
 
 const BLE_SLOT_COUNT = 4
 
@@ -83,12 +84,7 @@ function RaspberryPiConfig() {
                 throw new Error(json.detail || json.message || 'Failed to fetch Pi details')
             }
 
-            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
-                piKey,
-                id: piData?.id || '',
-                ipAddress: piData?.ipAddress,
-                devices: Array.isArray(piData?.devices) ? piData.devices : [],
-            }))
+            const piList = normalizePiSnapshot(json)
             setPis(piList)
             return piList
         } catch (e) {
@@ -100,8 +96,26 @@ function RaspberryPiConfig() {
     }
 
     const handleAddPi = async () => {
-        if (!newPiName.trim()) return setAddPiMessage('Name is required.')
-        if (!newPiIp.trim()) return setAddPiMessage('IP Address is required.')
+        const normalizedName = newPiName.trim()
+        const normalizedIp = newPiIp.trim()
+
+        if (!normalizedName) return setAddPiMessage('Name is required.')
+        if (!normalizedIp) return setAddPiMessage('IP Address is required.')
+
+        const latestPis = await fetchPiDetails()
+        const duplicateName = latestPis.some(
+            (pi) => (pi?.piKey || '').trim().toLowerCase() === normalizedName.toLowerCase()
+        )
+        if (duplicateName) {
+            return setAddPiMessage('A Raspberry Pi with this name already exists.')
+        }
+
+        const duplicateIp = latestPis.some(
+            (pi) => (pi?.ipAddress || '').trim() === normalizedIp
+        )
+        if (duplicateIp) {
+            return setAddPiMessage('A Raspberry Pi with this IP address already exists.')
+        }
 
         setAddPiMessage('Adding...')
         try {
@@ -109,16 +123,16 @@ function RaspberryPiConfig() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    name: newPiName.trim(),
-                    ip_address: newPiIp.trim(),
+                    name: normalizedName,
+                    ip_address: normalizedIp,
                 }),
             })
             const json = await res.json()
             if (res.ok) {
                 const newPi = {
-                    piKey: newPiName.trim(),
+                    piKey: normalizedName,
                     id: '',
-                    ipAddress: newPiIp.trim(),
+                    ipAddress: normalizedIp,
                     devices: [],
                 }
                 setPis((prev) => [newPi, ...prev])

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
@@ -40,6 +41,132 @@ def delete_ambulance(vehicle_id: str):
             "status": "success",
             "message": "Ambulance deleted successfully",
             "data": rpc_data,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/registerambulance", summary="Create an ambulance and assign a Raspberry Pi")
+def register_ambulance(payload: dict):
+    unit_number = (payload.get("unit_number") or "").strip()
+    station_name = (payload.get("station_name") or "").strip() or "Main Station"
+    raspberry_pi_name = (payload.get("raspberry_pi_name") or "").strip()
+    assets_payload = payload.get("assets", [])
+
+    if not unit_number:
+        raise HTTPException(status_code=400, detail="'unit_number' is required")
+    if not raspberry_pi_name:
+        raise HTTPException(status_code=400, detail="'raspberry_pi_name' is required")
+
+    normalized_assets = [
+        {
+            "type": (asset.get("type") or "").strip().upper(),
+            "label": (asset.get("label") or "").strip(),
+            "ble_identifier": (asset.get("ble_identifier") or "").strip(),
+        }
+        for asset in assets_payload
+    ]
+
+    if len(normalized_assets) != 4:
+        raise HTTPException(status_code=400, detail="Exactly four assets are required")
+
+    if any(not asset["label"] for asset in normalized_assets):
+        raise HTTPException(status_code=400, detail="All asset labels are required")
+    if any(not asset["ble_identifier"] for asset in normalized_assets):
+        raise HTTPException(status_code=400, detail="All BLE identifiers are required")
+
+    if any(asset["type"] not in {"BOX", "POUCH"} for asset in normalized_assets):
+        raise HTTPException(status_code=400, detail="Asset types must be BOX or POUCH")
+
+    try:
+        existing_vehicle = (
+            supabase.table("vehicles")
+            .select("id")
+            .eq("unit_number", unit_number)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if existing_vehicle:
+            raise HTTPException(status_code=409, detail="An ambulance with this unit number already exists")
+
+        pi_rows = (
+            supabase.table("devices")
+            .select("id, vehicle_id")
+            .eq("device_name", raspberry_pi_name)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        selected_pi = pi_rows[0] if pi_rows else None
+        if not selected_pi:
+            raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
+        if selected_pi.get("vehicle_id"):
+            raise HTTPException(status_code=409, detail="Selected Raspberry Pi is already assigned")
+
+        vehicle_id = str(uuid4())
+        asset_rows = [
+            {
+                "id": str(uuid4()),
+                "vehicle_id": vehicle_id,
+                "type": asset["type"],
+                "label": asset["label"],
+                "ble_identifier": asset["ble_identifier"],
+                "is_active": True,
+            }
+            for asset in normalized_assets
+        ]
+
+        vehicle_insert = (
+            supabase.table("vehicles")
+            .insert(
+                {
+                    "id": vehicle_id,
+                    "unit_number": unit_number,
+                    "station_name": station_name,
+                }
+            )
+            .execute()
+        )
+        if getattr(vehicle_insert, "error", None):
+            raise HTTPException(status_code=500, detail=str(vehicle_insert.error))
+
+        assets_insert = supabase.table("assets").insert(asset_rows).execute()
+        if getattr(assets_insert, "error", None):
+            raise HTTPException(status_code=500, detail=str(assets_insert.error))
+
+        device_update = (
+            supabase.table("devices")
+            .update({"vehicle_id": vehicle_id})
+            .eq("device_name", raspberry_pi_name)
+            .execute()
+        )
+        if getattr(device_update, "error", None):
+            raise HTTPException(status_code=500, detail=str(device_update.error))
+
+        try:
+            supabase.table("alerts").insert(
+                {
+                    "asset_id": vehicle_id,
+                    "vehicle_id": vehicle_id,
+                    "status": "OPEN",
+                    "reason": f"Device added: {unit_number}",
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).execute()
+        except Exception as alert_err:
+            print(f"[WARN] Failed to log audit alert: {alert_err}")
+
+        return {
+            "status": "success",
+            "message": "Ambulance created successfully",
+            "data": {
+                "id": vehicle_id,
+            },
         }
     except HTTPException:
         raise
@@ -89,30 +216,15 @@ def update_ambulance(payload: dict):
         ]
 
         if normalized_assets:
-            existing_tags = supabase.table("ble_tags").select("id, asset_id").in_(
-                "asset_id", [asset["id"] for asset in normalized_assets]
-            ).execute().data or []
-            tag_by_asset_id = {
-                tag.get("asset_id"): tag for tag in existing_tags if tag.get("asset_id")
-            }
-
             for asset in normalized_assets:
                 asset_id = asset["id"]
                 supabase.table("assets").update(
                     {
                         "label": asset.get("label"),
                         "vehicle_id": vehicle_id,
+                        "ble_identifier": asset["ble_identifier"],
                     }
                 ).eq("id", asset_id).execute()
-
-                tag_payload = {"identifier": asset["ble_identifier"], "asset_id": asset_id}
-                existing_tag = tag_by_asset_id.get(asset_id)
-                if existing_tag and existing_tag.get("id"):
-                    supabase.table("ble_tags").update(tag_payload).eq(
-                        "id", existing_tag["id"]
-                    ).execute()
-                else:
-                    supabase.table("ble_tags").insert(tag_payload).execute()
 
         try:
             supabase.table("alerts").insert(

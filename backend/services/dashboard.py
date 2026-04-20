@@ -88,7 +88,11 @@ def build_device_management_payload():
     ble_tags = _safe_fetch_table_rows("ble_tags")
 
     device_by_vehicle = {d.get("vehicle_id"): d for d in devices if d.get("vehicle_id")}
-    ble_by_asset = {t.get("asset_id"): t for t in ble_tags if t.get("asset_id")}
+    ble_by_identifier = {
+        (t.get("identifier") or "").strip(): t
+        for t in ble_tags
+        if (t.get("identifier") or "").strip()
+    }
 
     vehicles_out = []
     for veh in vehicles:
@@ -98,19 +102,18 @@ def build_device_management_payload():
 
         pi_device = device_by_vehicle.get(vid)
         vehicle_assets = [a for a in assets if a.get("vehicle_id") == vid]
-
         boxes = []
         pouches = []
 
         for asset in vehicle_assets:
             asset_type = (asset.get("type") or "").upper()
-            tag = ble_by_asset.get(asset.get("id"))
+            asset_ble_identifier = (asset.get("ble_identifier") or "").strip()
+            tag = ble_by_identifier.get(asset_ble_identifier)
 
             payload = {
                 "asset_id": asset.get("id"),
                 "label": asset.get("label"),
-                "ble_mac_address": tag.get("identifier") if tag else None,
-                "parent_asset_id": asset.get("parent_asset_id"),
+                "ble_mac_address": asset_ble_identifier or None,
             }
 
             if asset_type == "BOX":
@@ -151,8 +154,10 @@ def build_all_details_payload():
     device_by_vehicle_id = {
         device.get("vehicle_id"): device for device in devices if device.get("vehicle_id")
     }
-    ble_tag_by_asset_id = {
-        ble_tag.get("asset_id"): ble_tag for ble_tag in ble_tags if ble_tag.get("asset_id")
+    ble_tag_by_identifier = {
+        (ble_tag.get("identifier") or "").strip(): ble_tag
+        for ble_tag in ble_tags
+        if (ble_tag.get("identifier") or "").strip()
     }
     assets_by_vehicle_id = {}
 
@@ -170,7 +175,6 @@ def build_all_details_payload():
 
         device = device_by_vehicle_id.get(vehicle_id)
         vehicle_assets = assets_by_vehicle_id.get(vehicle_id, [])
-
         if not vehicle_assets:
             rows.append(
                 {
@@ -182,7 +186,6 @@ def build_all_details_payload():
                     "asset_id": None,
                     "asset_type": None,
                     "label": None,
-                    "parent_asset_id": None,
                     "ble_identifier": None,
                     "tag_model": None,
                 }
@@ -191,7 +194,8 @@ def build_all_details_payload():
 
         for asset in vehicle_assets:
             asset_id = asset.get("id")
-            ble_tag = ble_tag_by_asset_id.get(asset_id)
+            ble_identifier = (asset.get("ble_identifier") or "").strip()
+            ble_tag = ble_tag_by_identifier.get(ble_identifier)
 
             rows.append(
                 {
@@ -203,8 +207,7 @@ def build_all_details_payload():
                     "asset_id": asset_id,
                     "asset_type": asset.get("type"),
                     "label": asset.get("label"),
-                    "parent_asset_id": asset.get("parent_asset_id"),
-                    "ble_identifier": ble_tag.get("identifier") if ble_tag else None,
+                    "ble_identifier": ble_identifier or None,
                     "tag_model": ble_tag.get("tag_model") if ble_tag else None,
                 }
             )

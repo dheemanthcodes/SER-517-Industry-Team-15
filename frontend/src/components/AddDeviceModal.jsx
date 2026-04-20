@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Typography, Divider } from '@supabase/ui'
 import apiBase from '../apiBase'
+import { getUnassignedPis, normalizePiSnapshot } from '../utils/piSnapshot'
 
 function AddDeviceModal({
     show,
@@ -29,6 +30,7 @@ function AddDeviceModal({
     const [fallbackAvailablePis, setFallbackAvailablePis] = useState([])
     const [fallbackPiLoading, setFallbackPiLoading] = useState(false)
     const [fallbackPiLoadError, setFallbackPiLoadError] = useState('')
+    const onRefreshPisRef = useRef(onRefreshPis)
 
     const loadAvailablePis = async () => {
         setFallbackPiLoading(true)
@@ -41,16 +43,8 @@ function AddDeviceModal({
                 throw new Error(json.detail || json.message || 'Failed to fetch Pi details')
             }
 
-            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
-                piKey,
-                id: piData?.id || '',
-                ambulanceId: piData?.ambulanceId || '',
-                ipAddress: piData?.ipAddress || '',
-                devices: Array.isArray(piData?.devices) ? piData.devices : []
-            }))
-
-            const unassignedPis = piList.filter((pi) => !pi.ambulanceId)
-            setFallbackAvailablePis(unassignedPis)
+            const piList = normalizePiSnapshot(json)
+            setFallbackAvailablePis(getUnassignedPis(piList))
         } catch (err) {
             console.error('Failed to load Raspberry Pi options:', err)
             setFallbackPiLoadError('Failed to load Raspberry Pi options.')
@@ -66,14 +60,18 @@ function AddDeviceModal({
     const piLoadError = usingParentPiState ? preloadedPiLoadError : fallbackPiLoadError
 
     useEffect(() => {
+        onRefreshPisRef.current = onRefreshPis
+    }, [onRefreshPis])
+
+    useEffect(() => {
         if (!show) return
 
         if (usingParentPiState) {
-            onRefreshPis()
+            onRefreshPisRef.current?.()
         } else {
             loadAvailablePis()
         }
-    }, [show, usingParentPiState, onRefreshPis])
+    }, [show, usingParentPiState])
 
     useEffect(() => {
         if (!deviceForm.raspberryPiKey) return
@@ -95,17 +93,15 @@ function AddDeviceModal({
         return Array.isArray(selectedPi?.devices) ? selectedPi.devices : []
     }, [selectedPi])
 
-    const boxDevices = useMemo(() => {
-        return selectedPiDevices.filter((device) =>
-            (device.name || '').toLowerCase().includes('box')
+    const getBleOptionsForType = (assetType) => {
+        const matchingDevices = selectedPiDevices.filter((device) =>
+            (device.name || '').toLowerCase().includes(
+                assetType === 'BOX' ? 'box' : 'pouch'
+            )
         )
-    }, [selectedPiDevices])
 
-    const pouchDevices = useMemo(() => {
-        return selectedPiDevices.filter((device) =>
-            (device.name || '').toLowerCase().includes('pouch')
-        )
-    }, [selectedPiDevices])
+        return matchingDevices.length > 0 ? matchingDevices : selectedPiDevices
+    }
 
     const noPiAvailable = !piLoading && availablePis.length === 0
     const assetFieldsDisabled = loading || noPiAvailable
@@ -190,10 +186,15 @@ function AddDeviceModal({
                             onChange={(e) =>
                                 setDeviceForm({
                                     ...deviceForm,
-                                    raspberryPiKey: e.target.value
+                                    raspberryPiKey: e.target.value,
+                                    drugBox1BleId: '',
+                                    drugBox2BleId: '',
+                                    narcoticsPouch1BleId: '',
+                                    narcoticsPouch2BleId: ''
                                 })
                             }
                             disabled={loading || piLoading || availablePis.length === 0}
+                            required
                         >
                             <option value="">
                                 {piLoading
@@ -230,71 +231,6 @@ function AddDeviceModal({
                             </div>
                         )}
 
-                        {selectedPi && (
-                            <div className="ble-device-pool">
-                                <div className="ble-device-pool-header">
-                                    <Typography.Text>Available BLE Tags from Selected Raspberry Pi</Typography.Text>
-                                </div>
-
-                                {selectedPiDevices.length > 0 ? (
-                                    <div className="ble-device-groups">
-                                        <div className="ble-device-group">
-                                            <div className="ble-device-group-title">Drug Box IDs</div>
-                                            {boxDevices.length > 0 ? (
-                                                <div className="ble-device-list">
-                                                    {boxDevices.map((device, index) => (
-                                                        <div
-                                                            key={`${device.name || 'box'}-${device.address || index}`}
-                                                            className="ble-device-card"
-                                                        >
-                                                            <div className="ble-device-name">
-                                                                {device.name || `Box Device ${index + 1}`}
-                                                            </div>
-                                                            <div className="ble-device-address">
-                                                                {device.address || 'No BLE address available'}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="ble-device-empty">
-                                                    No box BLE devices were returned for this Raspberry Pi.
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="ble-device-group">
-                                            <div className="ble-device-group-title">Narcotics Pouch IDs</div>
-                                            {pouchDevices.length > 0 ? (
-                                                <div className="ble-device-list">
-                                                    {pouchDevices.map((device, index) => (
-                                                        <div
-                                                            key={`${device.name || 'pouch'}-${device.address || index}`}
-                                                            className="ble-device-card"
-                                                        >
-                                                            <div className="ble-device-name">
-                                                                {device.name || `Pouch Device ${index + 1}`}
-                                                            </div>
-                                                            <div className="ble-device-address">
-                                                                {device.address || 'No BLE address available'}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="ble-device-empty">
-                                                    No pouch BLE devices were returned for this Raspberry Pi.
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="ble-device-empty">
-                                        No BLE devices were returned for the selected Raspberry Pi.
-                                    </div>
-                                )}
-                            </div>
-                        )}
                     </div>
                     </div>
 
@@ -318,13 +254,26 @@ function AddDeviceModal({
                                 </div>
                                 <div className="form-field">
                                     <Typography.Text>BLE ID</Typography.Text>
-                                    <Input
-                                        type="text"
+                                    <select
+                                        className="form-select"
                                         value={deviceForm.drugBox1BleId}
                                         onChange={(e) => setDeviceForm({ ...deviceForm, drugBox1BleId: e.target.value })}
-                                        placeholder="e.g., AC:23:3F:A4:12:89"
                                         disabled={assetFieldsDisabled}
-                                    />
+                                    >
+                                        <option value="">
+                                            {selectedPi
+                                                ? 'Select device address'
+                                                : 'Select Raspberry Pi first'}
+                                        </option>
+                                        {getBleOptionsForType('BOX').map((device, index) => (
+                                            <option
+                                                key={`${device.address || 'box'}-${index}`}
+                                                value={device.address || ''}
+                                            >
+                                                {device.address || 'No address'}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -344,13 +293,26 @@ function AddDeviceModal({
                                 </div>
                                 <div className="form-field">
                                     <Typography.Text>BLE ID</Typography.Text>
-                                    <Input
-                                        type="text"
+                                    <select
+                                        className="form-select"
                                         value={deviceForm.drugBox2BleId}
                                         onChange={(e) => setDeviceForm({ ...deviceForm, drugBox2BleId: e.target.value })}
-                                        placeholder="e.g., AC:23:3F:A4:12:90"
                                         disabled={assetFieldsDisabled}
-                                    />
+                                    >
+                                        <option value="">
+                                            {selectedPi
+                                                ? 'Select device address'
+                                                : 'Select Raspberry Pi first'}
+                                        </option>
+                                        {getBleOptionsForType('BOX').map((device, index) => (
+                                            <option
+                                                key={`${device.address || 'box'}-${index}`}
+                                                value={device.address || ''}
+                                            >
+                                                {device.address || 'No address'}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -370,13 +332,26 @@ function AddDeviceModal({
                                 </div>
                                 <div className="form-field">
                                     <Typography.Text>BLE ID</Typography.Text>
-                                    <Input
-                                        type="text"
+                                    <select
+                                        className="form-select"
                                         value={deviceForm.narcoticsPouch1BleId}
                                         onChange={(e) => setDeviceForm({ ...deviceForm, narcoticsPouch1BleId: e.target.value })}
-                                        placeholder="e.g., AC:23:3F:A4:12:91"
                                         disabled={assetFieldsDisabled}
-                                    />
+                                    >
+                                        <option value="">
+                                            {selectedPi
+                                                ? 'Select device address'
+                                                : 'Select Raspberry Pi first'}
+                                        </option>
+                                        {getBleOptionsForType('POUCH').map((device, index) => (
+                                            <option
+                                                key={`${device.address || 'pouch'}-${index}`}
+                                                value={device.address || ''}
+                                            >
+                                                {device.address || 'No address'}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -396,13 +371,26 @@ function AddDeviceModal({
                                 </div>
                                 <div className="form-field">
                                     <Typography.Text>BLE ID</Typography.Text>
-                                    <Input
-                                        type="text"
+                                    <select
+                                        className="form-select"
                                         value={deviceForm.narcoticsPouch2BleId}
                                         onChange={(e) => setDeviceForm({ ...deviceForm, narcoticsPouch2BleId: e.target.value })}
-                                        placeholder="e.g., AC:23:3F:A4:12:92"
                                         disabled={assetFieldsDisabled}
-                                    />
+                                    >
+                                        <option value="">
+                                            {selectedPi
+                                                ? 'Select device address'
+                                                : 'Select Raspberry Pi first'}
+                                        </option>
+                                        {getBleOptionsForType('POUCH').map((device, index) => (
+                                            <option
+                                                key={`${device.address || 'pouch'}-${index}`}
+                                                value={device.address || ''}
+                                            >
+                                                {device.address || 'No address'}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         </div>

@@ -3,6 +3,7 @@ import { Button, Input } from '@supabase/ui'
 import { supabase } from '../supabaseClient'
 import AddDeviceModal from '../components/AddDeviceModal'
 import apiBase from '../apiBase'
+import { getUnassignedPis, normalizePiSnapshot } from '../utils/piSnapshot'
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -32,7 +33,6 @@ const normalizeAllDetailsRows = (rows) => {
                 id: row.asset_id,
                 type: row?.asset_type || '',
                 label: row?.label || '',
-                parent_asset_id: row?.parent_asset_id || null,
                 ble_tag: {
                     identifier: row?.ble_identifier || '',
                     tag_model: row?.tag_model || ''
@@ -46,7 +46,7 @@ const normalizeAllDetailsRows = (rows) => {
 
 const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], bleTags = [] }) => {
     const deviceByVehicleId = new Map()
-    const bleTagByAssetId = new Map()
+    const bleTagByIdentifier = new Map()
     const assetsByVehicleId = new Map()
 
     for (const device of Array.isArray(devices) ? devices : []) {
@@ -56,8 +56,8 @@ const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], b
     }
 
     for (const bleTag of Array.isArray(bleTags) ? bleTags : []) {
-        if (bleTag?.asset_id) {
-            bleTagByAssetId.set(bleTag.asset_id, bleTag)
+        if (bleTag?.identifier) {
+            bleTagByIdentifier.set(bleTag.identifier, bleTag)
         }
     }
 
@@ -83,14 +83,13 @@ const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], b
                 ip_address: assignedDevice?.ip_address || ''
             },
             assets: vehicleAssets.map((asset) => {
-                const bleTag = bleTagByAssetId.get(asset?.id)
+                const bleTag = bleTagByIdentifier.get(asset?.ble_identifier || '')
                 return {
                     id: asset?.id,
                     type: asset?.type || '',
                     label: asset?.label || '',
-                    parent_asset_id: asset?.parent_asset_id || null,
                     ble_tag: {
-                        identifier: bleTag?.identifier || '',
+                        identifier: asset?.ble_identifier || '',
                         tag_model: bleTag?.tag_model || ''
                     }
                 }
@@ -299,18 +298,9 @@ function DeviceManagement({ isActive = true }) {
             setPiLoadError('')
 
             const json = await fetchJsonWithRetry(`${apiBase}/api/fetchpidetails`)
-
-            const piList = Object.entries(json || {}).map(([piKey, piData]) => ({
-                piKey,
-                id: piData?.id || '',
-                ambulanceId: piData?.ambulanceId || '',
-                ipAddress: piData?.ipAddress || '',
-                devices: Array.isArray(piData?.devices) ? piData.devices : []
-            }))
-
+            const piList = normalizePiSnapshot(json)
             setAllPis(piList)
-            const unassignedPis = piList.filter((pi) => !pi.ambulanceId)
-            setAvailablePis(unassignedPis)
+            setAvailablePis(getUnassignedPis(piList))
         } catch (err) {
             console.error('Failed to load Raspberry Pi options:', err)
             setPiLoadError('Failed to load Raspberry Pi options.')
@@ -454,33 +444,6 @@ function DeviceManagement({ isActive = true }) {
         return availableDevice?.address || ''
     }
 
-    const handleAssetParentChange = (assetId, parentId) => {
-        setEditingVehicleData((prev) => {
-            if (!prev) return prev
-
-            const nextParentId = parentId || null
-            return {
-                ...prev,
-                assets: (prev.assets || []).map((asset) =>
-                    asset.id === assetId
-                        ? {
-                            ...asset,
-                            parent_asset_id: nextParentId,
-                            ble_tag: {
-                                ...(asset.ble_tag || {}),
-                                identifier:
-                                    nextParentId &&
-                                    !(asset.ble_tag?.identifier || '').trim()
-                                        ? getFirstAvailableBleAddress(prev, assetId, 'POUCH')
-                                        : asset.ble_tag?.identifier || ''
-                            }
-                        }
-                        : asset
-                )
-            }
-        })
-    }
-
     const handleCancelVehicleEdit = () => {
         setEditingVehicleId(null)
         setEditingVehicleData(null)
@@ -527,8 +490,7 @@ function DeviceManagement({ isActive = true }) {
                     ble_identifier:
                         asset.ble_tag && typeof asset.ble_tag.identifier === 'string'
                             ? asset.ble_tag.identifier.trim()
-                            : '',
-                    parent_asset_id: asset.type === 'POUCH' ? asset.parent_asset_id || null : null
+                            : ''
                 }))
             }
 
@@ -626,14 +588,12 @@ function DeviceManagement({ isActive = true }) {
                     id: `pouch-1-${newVehicleId}`,
                     type: 'POUCH',
                     label: formData.narcoticsPouch1Label,
-                    parent_asset_id: `box-1-${newVehicleId}`,
                     ble_tag: { identifier: formData.narcoticsPouch1BleId }
                 },
                 {
                     id: `pouch-2-${newVehicleId}`,
                     type: 'POUCH',
                     label: formData.narcoticsPouch2Label,
-                    parent_asset_id: `box-2-${newVehicleId}`,
                     ble_tag: { identifier: formData.narcoticsPouch2BleId }
                 }
             ]
@@ -656,37 +616,59 @@ function DeviceManagement({ isActive = true }) {
 
     const handleRegisterAmbulance = async (formData) => {
         const unitNumber = (formData.ambulanceNumber || '').trim()
+        const selectedPiKey = (formData.raspberryPiKey || '').trim()
+        const box1Label = (formData.drugBox1Label || '').trim()
+        const box2Label = (formData.drugBox2Label || '').trim()
+        const pouch1Label = (formData.narcoticsPouch1Label || '').trim()
+        const pouch2Label = (formData.narcoticsPouch2Label || '').trim()
         if (!unitNumber) throw new Error('Unit number is required.')
-
-        const payload = {
-            p_unit_number: unitNumber,
-            p_station_name: 'Main Station',
-            p_box1_label: (formData.drugBox1Label || '').trim(),
-            p_box1_ble_id: (formData.drugBox1BleId || '').trim(),
-            p_box2_label: (formData.drugBox2Label || '').trim(),
-            p_box2_ble_id: (formData.drugBox2BleId || '').trim(),
-            p_pouch1_label: (formData.narcoticsPouch1Label || '').trim(),
-            p_pouch1_ble_id: (formData.narcoticsPouch1BleId || '').trim(),
-            p_pouch2_label: (formData.narcoticsPouch2Label || '').trim(),
-            p_pouch2_ble_id: (formData.narcoticsPouch2BleId || '').trim()
+        if (!selectedPiKey) throw new Error('Please select a Raspberry Pi.')
+        if (!box1Label || !box2Label || !pouch1Label || !pouch2Label) {
+            throw new Error('All asset labels are required.')
         }
 
         try {
-            const { data, error } = await supabase.rpc('register_ambulance', payload)
-            if (error) throw error
+            const payload = {
+                unit_number: unitNumber,
+                station_name: 'Main Station',
+                raspberry_pi_name: selectedPiKey,
+                assets: [
+                    {
+                        type: 'BOX',
+                        label: box1Label,
+                        ble_identifier: (formData.drugBox1BleId || '').trim()
+                    },
+                    {
+                        type: 'BOX',
+                        label: box2Label,
+                        ble_identifier: (formData.drugBox2BleId || '').trim()
+                    },
+                    {
+                        type: 'POUCH',
+                        label: pouch1Label,
+                        ble_identifier: (formData.narcoticsPouch1BleId || '').trim()
+                    },
+                    {
+                        type: 'POUCH',
+                        label: pouch2Label,
+                        ble_identifier: (formData.narcoticsPouch2BleId || '').trim()
+                    }
+                ]
+            }
+
+            const res = await fetch(`${apiBase}/api/registerambulance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            const json = await res.json()
+            if (!res.ok) throw new Error(json.detail || json.message || 'Registration failed')
 
             const createdVehicleId =
-                typeof data === 'object' && data?.id ? data.id : data
-
-            await supabase.from('alerts').insert({
-                asset_id: createdVehicleId,
-                vehicle_id: createdVehicleId,
-                status: 'OPEN',
-                reason: `Device added: ${payload.p_unit_number}`,
-                opened_at: new Date().toISOString()
-            })
+                typeof json?.data === 'object' && json?.data?.id ? json.data.id : json?.data
 
             await fetchVehicles()
+            await fetchPiDetails()
             if (createdVehicleId) setExpandedVehicle(createdVehicleId)
         } catch (error) {
             console.error('Error registering ambulance:', error)
@@ -754,12 +736,6 @@ function DeviceManagement({ isActive = true }) {
                             const assets = currentVehicle.assets || []
                             const drugBoxes = assets.filter((a) => a.type === 'BOX') || []
                             const pouches = assets.filter((a) => a.type === 'POUCH') || []
-
-                            const boxLabelById = drugBoxes.reduce((acc, box) => {
-                                acc[box.id] = box.label
-                                return acc
-                            }, {})
-                            const formatBoxAssignmentLabel = (_, index) => `Box ${index + 1}`
 
                             const originalAssignedPi = vehicle.raspberry_pi?.name
                                 ? {
@@ -1088,11 +1064,6 @@ function DeviceManagement({ isActive = true }) {
                                                 ) : (
                                                     <div className="vehicle-assets-grid">
                                                         {pouches.map((pouch, index) => {
-                                                            const parentLabel = pouch.parent_asset_id
-                                                                ? boxLabelById[pouch.parent_asset_id] ||
-                                                                'Unassigned'
-                                                                : 'Unassigned'
-
                                                             return (
                                                                 <div key={pouch.id} className="vehicle-asset-card">
                                                                     <div className="vehicle-asset-header">
@@ -1160,42 +1131,6 @@ function DeviceManagement({ isActive = true }) {
                                                                             <div className="vehicle-asset-value">
                                                                                 {pouch.ble_tag?.tag_model || '—'}
                                                                             </div>
-                                                                        </div>
-                                                                        <div className="vehicle-asset-field">
-                                                                            <div className="vehicle-asset-label">Assigned to</div>
-                                                                            {isEditing ? (
-                                                                                <select
-                                                                                    value={pouch.parent_asset_id || ''}
-                                                                                    disabled={disableAssetEditing}
-                                                                                    onChange={(e) =>
-                                                                                        handleAssetParentChange(
-                                                                                            pouch.id,
-                                                                                            e.target.value
-                                                                                        )
-                                                                                    }
-                                                                                    className="vehicle-asset-select"
-                                                                                >
-                                                                                    <option value="">Unassigned</option>
-                                                                                    {drugBoxes.map((box) => (
-                                                                                        <option
-                                                                                            key={box.id}
-                                                                                            value={box.id}
-                                                                                        >
-                                                                                            {formatBoxAssignmentLabel(
-                                                                                                box.label,
-                                                                                                drugBoxes.findIndex(
-                                                                                                    (drugBox) =>
-                                                                                                        drugBox.id === box.id
-                                                                                                )
-                                                                                            )}
-                                                                                        </option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            ) : (
-                                                                                <div className="vehicle-asset-value">
-                                                                                    {parentLabel}
-                                                                                </div>
-                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
