@@ -14,6 +14,92 @@ except ImportError:
 router = APIRouter(tags=["Dashboard"])
 
 
+def _normalize_ble_identifier(value: str) -> str:
+    return str(value or "").strip().replace("-", ":").upper()
+
+
+def _load_pi(device_name: str):
+    if not device_name:
+        return None
+
+    rows = (
+        supabase.table("devices")
+        .select("id, vehicle_id")
+        .eq("device_name", device_name)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    return rows[0] if rows else None
+
+
+def _load_pi_ble_identifiers(device_id: str):
+    if not device_id:
+        return set()
+
+    rows = (
+        supabase.table("ble_tags")
+        .select("identifier")
+        .eq("asset_id", device_id)
+        .execute()
+        .data
+        or []
+    )
+    return {
+        _normalize_ble_identifier(row.get("identifier"))
+        for row in rows
+        if _normalize_ble_identifier(row.get("identifier"))
+    }
+
+
+def _validate_assigned_ble_identifiers(normalized_assets, raspberry_pi_name: str):
+    if not raspberry_pi_name:
+        return None, set()
+
+    selected_pi = _load_pi(raspberry_pi_name)
+    if not selected_pi:
+        raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
+    if selected_pi.get("vehicle_id"):
+        raise HTTPException(status_code=409, detail="Selected Raspberry Pi is already assigned")
+
+    available_identifiers = _load_pi_ble_identifiers(selected_pi.get("id"))
+    requested_identifiers = [asset["ble_identifier"] for asset in normalized_assets]
+
+    if len(set(requested_identifiers)) != len(requested_identifiers):
+        raise HTTPException(status_code=400, detail="BLE identifiers must be unique within an ambulance")
+
+    missing_identifiers = [
+        identifier for identifier in requested_identifiers if identifier not in available_identifiers
+    ]
+    if missing_identifiers:
+        raise HTTPException(
+            status_code=400,
+            detail="All BLE identifiers must belong to the selected Raspberry Pi",
+        )
+
+    return selected_pi, available_identifiers
+
+
+def _upsert_asset_status_rows(asset_rows):
+    now_iso = datetime.now(timezone.utc).isoformat()
+    status_rows = [
+        {
+            "asset_id": asset["id"],
+            "vehicle_id": asset["vehicle_id"],
+            "state": "IN_VEHICLE",
+            "last_seen_at": now_iso,
+            "last_rssi": None,
+            "updated_at": now_iso,
+        }
+        for asset in asset_rows
+        if asset.get("id") and asset.get("vehicle_id")
+    ]
+
+    if status_rows:
+        supabase.table("asset_status").upsert(status_rows).execute()
+
+
 @router.get("/api/fetchpidetails", summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
@@ -64,7 +150,7 @@ def register_ambulance(payload: dict):
         {
             "type": (asset.get("type") or "").strip().upper(),
             "label": (asset.get("label") or "").strip(),
-            "ble_identifier": (asset.get("ble_identifier") or "").strip(),
+            "ble_identifier": _normalize_ble_identifier(asset.get("ble_identifier") or ""),
         }
         for asset in assets_payload
     ]
@@ -93,20 +179,7 @@ def register_ambulance(payload: dict):
         if existing_vehicle:
             raise HTTPException(status_code=409, detail="An ambulance with this unit number already exists")
 
-        pi_rows = (
-            supabase.table("devices")
-            .select("id, vehicle_id")
-            .eq("device_name", raspberry_pi_name)
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        selected_pi = pi_rows[0] if pi_rows else None
-        if not selected_pi:
-            raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
-        if selected_pi.get("vehicle_id"):
-            raise HTTPException(status_code=409, detail="Selected Raspberry Pi is already assigned")
+        selected_pi, _ = _validate_assigned_ble_identifiers(normalized_assets, raspberry_pi_name)
 
         vehicle_id = str(uuid4())
         asset_rows = [
@@ -138,6 +211,8 @@ def register_ambulance(payload: dict):
         assets_insert = supabase.table("assets").insert(asset_rows).execute()
         if getattr(assets_insert, "error", None):
             raise HTTPException(status_code=500, detail=str(assets_insert.error))
+
+        _upsert_asset_status_rows(asset_rows)
 
         device_update = (
             supabase.table("devices")
@@ -187,6 +262,24 @@ def update_ambulance(payload: dict):
     if not unit_number:
         raise HTTPException(status_code=400, detail="'unit_number' is required")
 
+    normalized_assets = [
+        {
+            "id": a.get("id"),
+            "type": (a.get("type") or "").strip().upper(),
+            "label": (a.get("label") or "").strip(),
+            "ble_identifier": _normalize_ble_identifier(a.get("ble_identifier") or ""),
+        }
+        for a in assets_payload
+        if a.get("id")
+    ]
+
+    if any(not asset["label"] for asset in normalized_assets):
+        raise HTTPException(status_code=400, detail="All asset labels are required")
+    if any(not asset["ble_identifier"] for asset in normalized_assets):
+        raise HTTPException(status_code=400, detail="All BLE identifiers are required")
+    if any(asset["type"] not in {"BOX", "POUCH"} for asset in normalized_assets):
+        raise HTTPException(status_code=400, detail="Asset types must be BOX or POUCH")
+
     try:
         supabase.table("vehicles").update(
             {
@@ -194,6 +287,25 @@ def update_ambulance(payload: dict):
                 "station_name": station_name,
             }
         ).eq("id", vehicle_id).execute()
+
+        if raspberry_pi_name:
+            selected_pi = _load_pi(raspberry_pi_name)
+            if not selected_pi:
+                raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
+            if selected_pi.get("vehicle_id") and selected_pi.get("vehicle_id") != vehicle_id:
+                raise HTTPException(status_code=409, detail="Selected Raspberry Pi is already assigned")
+
+            available_identifiers = _load_pi_ble_identifiers(selected_pi.get("id"))
+            requested_identifiers = [asset["ble_identifier"] for asset in normalized_assets]
+            if len(set(requested_identifiers)) != len(requested_identifiers):
+                raise HTTPException(status_code=400, detail="BLE identifiers must be unique within an ambulance")
+            if any(identifier not in available_identifiers for identifier in requested_identifiers):
+                raise HTTPException(
+                    status_code=400,
+                    detail="All BLE identifiers must belong to the selected Raspberry Pi",
+                )
+        else:
+            selected_pi = None
 
         supabase.table("devices").update({"vehicle_id": None}).eq("vehicle_id", vehicle_id).execute()
         if raspberry_pi_name:
@@ -203,17 +315,6 @@ def update_ambulance(payload: dict):
             supabase.table("devices").update({"vehicle_id": vehicle_id}).eq(
                 "device_name", raspberry_pi_name
             ).execute()
-
-        normalized_assets = [
-            {
-                "id": a.get("id"),
-                "type": (a.get("type") or "").strip(),
-                "label": a.get("label"),
-                "ble_identifier": (a.get("ble_identifier") or "").strip(),
-            }
-            for a in assets_payload
-            if a.get("id")
-        ]
 
         if normalized_assets:
             for asset in normalized_assets:
@@ -225,6 +326,15 @@ def update_ambulance(payload: dict):
                         "ble_identifier": asset["ble_identifier"],
                     }
                 ).eq("id", asset_id).execute()
+            _upsert_asset_status_rows(
+                [
+                    {
+                        "id": asset["id"],
+                        "vehicle_id": vehicle_id,
+                    }
+                    for asset in normalized_assets
+                ]
+            )
 
         try:
             supabase.table("alerts").insert(

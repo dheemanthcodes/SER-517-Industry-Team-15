@@ -147,7 +147,7 @@ def delete_pi(pi_name: str):
     try:
         device_rows = (
             supabase.table("devices")
-            .select("id, device_name")
+            .select("id, device_name, vehicle_id")
             .eq("device_name", normalized_name)
             .limit(1)
             .execute()
@@ -227,28 +227,8 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
         if not device:
             raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
 
-        asset_id = device["id"]
-        vehicle_id = device.get("vehicle_id")
-
-        conflicting = (
-            supabase.table("ble_tags")
-            .select("id, asset_id, identifier")
-            .eq("identifier", identifier)
-            .execute()
-            .data
-            or []
-        )
-        if any(
-            row.get("id") != ble_tag_id and row.get("asset_id") != asset_id
-            for row in conflicting
-            if row.get("asset_id")
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="This MAC address is already assigned to another asset.",
-            )
-
         existing_tag = None
+
         if ble_tag_id:
             existing = (
                 supabase.table("ble_tags")
@@ -262,17 +242,36 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
             existing_tag = existing[0] if existing else None
             if not existing_tag:
                 raise HTTPException(status_code=404, detail="BLE tag record was not found")
-            if existing_tag.get("asset_id") != asset_id:
+            if existing_tag.get("asset_id") != device.get("id"):
                 raise HTTPException(
                     status_code=400,
                     detail="BLE tag record does not belong to the selected Raspberry Pi",
                 )
-        else:
+
+        conflicting = (
+            supabase.table("ble_tags")
+            .select("id, asset_id, identifier")
+            .eq("identifier", identifier)
+            .execute()
+            .data
+            or []
+        )
+        if any(
+            row.get("id") != ble_tag_id and row.get("asset_id") != device.get("id")
+            for row in conflicting
+            if row.get("asset_id")
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="This MAC address is already assigned to another asset.",
+            )
+
+        if not existing_tag:
             existing = (
                 supabase.table("ble_tags")
                 .select("id, asset_id, identifier, tag_model")
-                .eq("asset_id", asset_id)
-                .eq("identifier", identifier)
+                .eq("asset_id", device.get("id"))
+                .eq("tag_model", name)
                 .limit(1)
                 .execute()
                 .data
@@ -291,7 +290,7 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
             inserted = (
                 supabase.table("ble_tags").insert(
                     {
-                        "asset_id": asset_id,
+                        "asset_id": device.get("id"),
                         "identifier": identifier,
                         "tag_model": name,
                     }
@@ -303,11 +302,11 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
         return {
             "status": "success",
             "data": {
-                "asset_id": asset_id,
-                "device_id": asset_id,
+                "asset_id": device.get("id"),
+                "device_id": device.get("id"),
                 "ble_tag_id": existing_tag.get("id") if existing_tag else None,
-                "pi_name": pi_name or None,
-                "vehicle_id": vehicle_id,
+                "pi_name": device.get("device_name"),
+                "vehicle_id": device.get("vehicle_id"),
                 "name": name,
                 "identifier": identifier,
                 "tag_model": name,
@@ -343,7 +342,7 @@ def delete_ble_tag(ble_tag_id: str, pi_id: str | None = None, pi_name: str | Non
             raise HTTPException(status_code=404, detail="BLE tag record was not found")
 
         if normalized_pi_id or normalized_pi_name:
-            device_query = supabase.table("devices").select("id, device_name").limit(1)
+            device_query = supabase.table("devices").select("id, device_name, vehicle_id").limit(1)
             if normalized_pi_id:
                 device_query = device_query.eq("id", normalized_pi_id)
             else:

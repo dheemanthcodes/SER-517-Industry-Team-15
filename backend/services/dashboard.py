@@ -56,7 +56,6 @@ def build_snapshot():
 
         vehicle_id = device.get("vehicle_id")
         vehicle = vehicle_by_id.get(vehicle_id) if vehicle_id else None
-
         tracked_devices = []
         for tag in tags_by_device_id.get(device_id, []):
             tracked_devices.append(
@@ -64,7 +63,7 @@ def build_snapshot():
                     "id": tag.get("id"),
                     "name": tag.get("tag_model") or tag.get("identifier") or "Unnamed BLE Device",
                     "address": tag.get("identifier"),
-                    "asset_id": tag.get("asset_id"),
+                    "asset_id": device_id,
                 }
             )
 

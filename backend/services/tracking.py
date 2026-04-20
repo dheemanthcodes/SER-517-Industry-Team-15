@@ -8,7 +8,7 @@ except ImportError:
 
 
 TRACKED_ASSET_STATES = {"IN_VEHICLE", "IN_USE", "MISSING"}
-DEFAULT_MISSING_TIMEOUT_SECONDS = 90
+DEFAULT_MISSING_TIMEOUT_SECONDS = 30
 
 
 def utc_now() -> datetime:
@@ -186,7 +186,7 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     assets = (
         supabase.table("assets")
-        .select("id, vehicle_id, label, type")
+        .select("id, vehicle_id, label, type, ble_identifier")
         .eq("vehicle_id", vehicle_id)
         .execute()
         .data
@@ -194,17 +194,8 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     asset_ids = [asset.get("id") for asset in assets if asset.get("id")]
 
-    tag_rows = []
     status_rows = []
     if asset_ids:
-        tag_rows = (
-            supabase.table("ble_tags")
-            .select("asset_id, identifier")
-            .in_("asset_id", asset_ids)
-            .execute()
-            .data
-            or []
-        )
         status_rows = (
             supabase.table("asset_status")
             .select("asset_id, vehicle_id, state, last_seen_at, last_rssi, updated_at")
@@ -229,11 +220,6 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         "device": device_row,
         "vehicle": vehicle_row,
         "assets": assets,
-        "tag_by_asset_id": {
-            tag.get("asset_id"): normalize_ble_identifier(tag.get("identifier"))
-            for tag in tag_rows
-            if tag.get("asset_id")
-        },
         "status_by_asset_id": {
             row.get("asset_id"): row for row in status_rows if row.get("asset_id")
         },
@@ -263,22 +249,12 @@ def determine_next_state(
     return "MISSING"
 
 
-def upsert_asset_status_row(
-    asset_id: str,
-    vehicle_id: str,
-    state: str,
-    observed_at: Optional[datetime],
-    rssi: Optional[float],
-) -> None:
+def seed_asset_status_rows(rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        return
+
     supabase.table("asset_status").upsert(
-        {
-            "asset_id": asset_id,
-            "vehicle_id": vehicle_id,
-            "state": state,
-            "last_seen_at": to_iso8601(observed_at),
-            "last_rssi": rssi,
-            "updated_at": to_iso8601(utc_now()),
-        }
+        rows
     ).execute()
 
 
@@ -302,84 +278,6 @@ def insert_presence_event_row(
         }
     ).execute()
 
-
-def open_missing_alert(asset_id: str, vehicle_id: str, reason: str, opened_at: datetime) -> None:
-    existing_open = (
-        supabase.table("alerts")
-        .select("id")
-        .eq("asset_id", asset_id)
-        .eq("vehicle_id", vehicle_id)
-        .in_("status", ["OPEN", "ACK"])
-        .limit(1)
-        .execute()
-        .data
-        or []
-    )
-
-    if existing_open:
-        return
-
-    supabase.table("alerts").insert(
-        {
-            "asset_id": asset_id,
-            "vehicle_id": vehicle_id,
-            "status": "OPEN",
-            "reason": reason,
-            "opened_at": to_iso8601(opened_at),
-        }
-    ).execute()
-
-
-def close_resolved_alerts(asset_id: str, vehicle_id: str, closed_at: datetime) -> None:
-    open_alerts = (
-        supabase.table("alerts")
-        .select("id, status")
-        .eq("asset_id", asset_id)
-        .eq("vehicle_id", vehicle_id)
-        .in_("status", ["OPEN", "ACK"])
-        .execute()
-        .data
-        or []
-    )
-
-    for alert in open_alerts:
-        alert_id = alert.get("id")
-        if not alert_id:
-            continue
-        supabase.table("alerts").update(
-            {
-                "status": "CLOSED",
-                "closed_at": to_iso8601(closed_at),
-            }
-        ).eq("id", alert_id).execute()
-
-
-def sync_alert_for_asset(
-    asset: Dict[str, Any],
-    vehicle: Optional[Dict[str, Any]],
-    vehicle_id: str,
-    state: str,
-    event_time: datetime,
-) -> None:
-    asset_id = asset.get("id")
-    if not asset_id:
-        return
-
-    if state == "MISSING":
-        asset_label = asset.get("label") or asset_id
-        vehicle_label = (vehicle or {}).get("unit_number") or vehicle_id
-        open_missing_alert(
-            asset_id,
-            vehicle_id,
-            f"BLE disconnect detected: {asset_label} is missing from {vehicle_label}",
-            event_time,
-        )
-        return
-
-    if state in {"IN_VEHICLE", "IN_USE"}:
-        close_resolved_alerts(asset_id, vehicle_id, event_time)
-
-
 def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
     batch_time = extract_payload_observed_at(payload, utc_now())
     observations_by_identifier = normalize_observations(payload)
@@ -400,9 +298,35 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
             "states": [],
         }
 
-    tag_by_asset_id = context.get("tag_by_asset_id") or {}
     status_by_asset_id = context.get("status_by_asset_id") or {}
     missing_timeout_seconds = context.get("missing_timeout_seconds") or DEFAULT_MISSING_TIMEOUT_SECONDS
+    seeded_status_rows = []
+
+    for asset in assets:
+        asset_id = asset.get("id")
+        if not asset_id or status_by_asset_id.get(asset_id):
+            continue
+
+        seeded_status_rows.append(
+            {
+                "asset_id": asset_id,
+                "vehicle_id": vehicle_id,
+                "state": "IN_VEHICLE",
+                "last_seen_at": to_iso8601(batch_time),
+                "last_rssi": None,
+                "updated_at": to_iso8601(batch_time),
+            }
+        )
+        status_by_asset_id[asset_id] = {
+            "asset_id": asset_id,
+            "vehicle_id": vehicle_id,
+            "state": "IN_VEHICLE",
+            "last_seen_at": to_iso8601(batch_time),
+            "last_rssi": None,
+            "updated_at": to_iso8601(batch_time),
+        }
+
+    seed_asset_status_rows(seeded_status_rows)
 
     state_rows = []
     seen_assets = 0
@@ -413,7 +337,10 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not asset_id:
             continue
 
-        ble_identifier = tag_by_asset_id.get(asset_id)
+        ble_identifier = normalize_ble_identifier(asset.get("ble_identifier"))
+        if not ble_identifier:
+            continue
+
         observation = observations_by_identifier.get(ble_identifier) if ble_identifier else None
         previous_status = status_by_asset_id.get(asset_id)
         next_state = determine_next_state(
@@ -446,15 +373,6 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
                 observed_at=event_time,
                 rssi=rssi,
             )
-
-        upsert_asset_status_row(
-            asset_id=asset_id,
-            vehicle_id=vehicle_id,
-            state=next_state,
-            observed_at=None if next_state == "MISSING" else last_seen_at,
-            rssi=None if next_state == "MISSING" else rssi,
-        )
-        sync_alert_for_asset(asset, context.get("vehicle"), vehicle_id, next_state, event_time)
 
         state_rows.append(
             {
