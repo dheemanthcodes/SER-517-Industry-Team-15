@@ -83,7 +83,10 @@ def build_device_management_payload():
         "devices",
         filters=[("eq", ("is_active", True))],
     )
-    assets = _safe_fetch_table_rows("assets")
+    assets = _safe_fetch_table_rows(
+        "assets",
+        filters=[("neq", ("is_active", False))],
+    )
     ble_tags = _safe_fetch_table_rows("ble_tags")
 
     device_by_vehicle = {d.get("vehicle_id"): d for d in devices if d.get("vehicle_id")}
@@ -113,6 +116,7 @@ def build_device_management_payload():
                 "asset_id": asset.get("id"),
                 "label": asset.get("label"),
                 "ble_mac_address": asset_ble_identifier or None,
+                "parent_asset_id": asset.get("parent_asset_id"),
             }
 
             if asset_type == "BOX":
@@ -147,7 +151,10 @@ def build_all_details_payload():
         "devices",
         filters=[("eq", ("is_active", True))],
     )
-    assets = _safe_fetch_table_rows("assets")
+    assets = _safe_fetch_table_rows(
+        "assets",
+        filters=[("neq", ("is_active", False))],
+    )
     ble_tags = _safe_fetch_table_rows("ble_tags")
 
     device_by_vehicle_id = {
@@ -186,6 +193,7 @@ def build_all_details_payload():
                     "asset_type": None,
                     "label": None,
                     "ble_identifier": None,
+                    "parent_asset_id": None,
                     "tag_model": None,
                 }
             )
@@ -207,6 +215,7 @@ def build_all_details_payload():
                     "asset_type": asset.get("type"),
                     "label": asset.get("label"),
                     "ble_identifier": ble_identifier or None,
+                    "parent_asset_id": asset.get("parent_asset_id"),
                     "tag_model": ble_tag.get("tag_model") if ble_tag else None,
                 }
             )

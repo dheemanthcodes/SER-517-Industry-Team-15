@@ -12,11 +12,11 @@ function AddDeviceModal({
     piLoadError: preloadedPiLoadError = '',
     onRefreshPis
 }) {
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState(null)
-    const [deviceForm, setDeviceForm] = useState({
+    const createInitialDeviceForm = () => ({
         ambulanceNumber: '',
+        stationName: '',
         raspberryPiKey: '',
+        boxCount: '1',
         drugBox1Label: '',
         drugBox1BleId: '',
         drugBox2Label: '',
@@ -26,6 +26,10 @@ function AddDeviceModal({
         narcoticsPouch2Label: '',
         narcoticsPouch2BleId: ''
     })
+
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState(null)
+    const [deviceForm, setDeviceForm] = useState(createInitialDeviceForm)
     
     const [fallbackAvailablePis, setFallbackAvailablePis] = useState([])
     const [fallbackPiLoading, setFallbackPiLoading] = useState(false)
@@ -105,6 +109,7 @@ function AddDeviceModal({
 
     const noPiAvailable = !piLoading && availablePis.length === 0
     const assetFieldsDisabled = loading || noPiAvailable
+    const hasSecondBox = deviceForm.boxCount === '2'
 
     const handleAddDevice = async (e) => {
         e.preventDefault()
@@ -114,18 +119,7 @@ function AddDeviceModal({
         try {
             if (onSuccess) await onSuccess(deviceForm)
 
-            setDeviceForm({
-                ambulanceNumber: '',
-                raspberryPiKey: '',
-                drugBox1Label: '',
-                drugBox1BleId: '',
-                drugBox2Label: '',
-                drugBox2BleId: '',
-                narcoticsPouch1Label: '',
-                narcoticsPouch1BleId: '',
-                narcoticsPouch2Label: '',
-                narcoticsPouch2BleId: ''
-            })
+            setDeviceForm(createInitialDeviceForm())
 
             onClose()
         } catch (err) {
@@ -176,6 +170,45 @@ function AddDeviceModal({
                                 required
                                 disabled={loading}
                             />
+                        </div>
+
+                        <div className="form-field">
+                            <Typography.Text>Station Name</Typography.Text>
+                            <Input
+                                type="text"
+                                value={deviceForm.stationName}
+                                onChange={(e) => setDeviceForm({ ...deviceForm, stationName: e.target.value })}
+                                placeholder="e.g., Main Station"
+                                required
+                                disabled={loading}
+                            />
+                        </div>
+
+                        <div className="form-field">
+                            <Typography.Text>Number of Boxes</Typography.Text>
+                            <select
+                                className="form-select"
+                                value={deviceForm.boxCount}
+                                onChange={(e) =>
+                                    setDeviceForm((prev) => ({
+                                        ...prev,
+                                        boxCount: e.target.value,
+                                        ...(e.target.value === '1'
+                                            ? {
+                                                drugBox2Label: '',
+                                                drugBox2BleId: '',
+                                                narcoticsPouch2Label: '',
+                                                narcoticsPouch2BleId: ''
+                                            }
+                                            : {})
+                                    }))
+                                }
+                                disabled={loading}
+                                required
+                            >
+                                <option value="1">1 box</option>
+                                <option value="2">2 boxes</option>
+                            </select>
                         </div>
 
                         <div className="form-field">
@@ -278,44 +311,46 @@ function AddDeviceModal({
                             </div>
                         </div>
 
-                        <div className={`form-section${assetFieldsDisabled ? ' form-section-disabled' : ''}`}>
-                            <Typography.Title level={4}>Drug Box 2</Typography.Title>
-                            <div className="form-row">
-                                <div className="form-field">
-                                    <Typography.Text>Box Label</Typography.Text>
-                                    <Input
-                                        type="text"
-                                        value={deviceForm.drugBox2Label}
-                                        onChange={(e) => setDeviceForm({ ...deviceForm, drugBox2Label: e.target.value })}
-                                        placeholder="e.g., Box B"
-                                        disabled={assetFieldsDisabled}
-                                    />
-                                </div>
-                                <div className="form-field">
-                                    <Typography.Text>BLE ID</Typography.Text>
-                                    <select
-                                        className="form-select"
-                                        value={deviceForm.drugBox2BleId}
-                                        onChange={(e) => setDeviceForm({ ...deviceForm, drugBox2BleId: e.target.value })}
-                                        disabled={assetFieldsDisabled}
-                                    >
-                                        <option value="">
-                                            {selectedPi
-                                                ? 'Select device address'
-                                                : 'Select Raspberry Pi first'}
-                                        </option>
-                                        {getBleOptionsForType('BOX').map((device, index) => (
-                                            <option
-                                                key={`${device.address || 'box'}-${index}`}
-                                                value={device.address || ''}
-                                            >
-                                                {device.address || 'No address'}
+                        {hasSecondBox && (
+                            <div className={`form-section${assetFieldsDisabled ? ' form-section-disabled' : ''}`}>
+                                <Typography.Title level={4}>Drug Box 2</Typography.Title>
+                                <div className="form-row">
+                                    <div className="form-field">
+                                        <Typography.Text>Box Label</Typography.Text>
+                                        <Input
+                                            type="text"
+                                            value={deviceForm.drugBox2Label}
+                                            onChange={(e) => setDeviceForm({ ...deviceForm, drugBox2Label: e.target.value })}
+                                            placeholder="e.g., Box B"
+                                            disabled={assetFieldsDisabled}
+                                        />
+                                    </div>
+                                    <div className="form-field">
+                                        <Typography.Text>BLE ID</Typography.Text>
+                                        <select
+                                            className="form-select"
+                                            value={deviceForm.drugBox2BleId}
+                                            onChange={(e) => setDeviceForm({ ...deviceForm, drugBox2BleId: e.target.value })}
+                                            disabled={assetFieldsDisabled}
+                                        >
+                                            <option value="">
+                                                {selectedPi
+                                                    ? 'Select device address'
+                                                    : 'Select Raspberry Pi first'}
                                             </option>
-                                        ))}
-                                    </select>
+                                            {getBleOptionsForType('BOX').map((device, index) => (
+                                                <option
+                                                    key={`${device.address || 'box'}-${index}`}
+                                                    value={device.address || ''}
+                                                >
+                                                    {device.address || 'No address'}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
 
                         <div className={`form-section${assetFieldsDisabled ? ' form-section-disabled' : ''}`}>
                             <Typography.Title level={4}>Narcotics Pouch 1</Typography.Title>
@@ -356,44 +391,46 @@ function AddDeviceModal({
                             </div>
                         </div>
 
-                        <div className={`form-section${assetFieldsDisabled ? ' form-section-disabled' : ''}`}>
-                            <Typography.Title level={4}>Narcotics Pouch 2</Typography.Title>
-                            <div className="form-row">
-                                <div className="form-field">
-                                    <Typography.Text>Pouch Label</Typography.Text>
-                                    <Input
-                                        type="text"
-                                        value={deviceForm.narcoticsPouch2Label}
-                                        onChange={(e) => setDeviceForm({ ...deviceForm, narcoticsPouch2Label: e.target.value })}
-                                        placeholder="e.g., Pouch B"
-                                        disabled={assetFieldsDisabled}
-                                    />
-                                </div>
-                                <div className="form-field">
-                                    <Typography.Text>BLE ID</Typography.Text>
-                                    <select
-                                        className="form-select"
-                                        value={deviceForm.narcoticsPouch2BleId}
-                                        onChange={(e) => setDeviceForm({ ...deviceForm, narcoticsPouch2BleId: e.target.value })}
-                                        disabled={assetFieldsDisabled}
-                                    >
-                                        <option value="">
-                                            {selectedPi
-                                                ? 'Select device address'
-                                                : 'Select Raspberry Pi first'}
-                                        </option>
-                                        {getBleOptionsForType('POUCH').map((device, index) => (
-                                            <option
-                                                key={`${device.address || 'pouch'}-${index}`}
-                                                value={device.address || ''}
-                                            >
-                                                {device.address || 'No address'}
+                        {hasSecondBox && (
+                            <div className={`form-section${assetFieldsDisabled ? ' form-section-disabled' : ''}`}>
+                                <Typography.Title level={4}>Narcotics Pouch 2</Typography.Title>
+                                <div className="form-row">
+                                    <div className="form-field">
+                                        <Typography.Text>Pouch Label</Typography.Text>
+                                        <Input
+                                            type="text"
+                                            value={deviceForm.narcoticsPouch2Label}
+                                            onChange={(e) => setDeviceForm({ ...deviceForm, narcoticsPouch2Label: e.target.value })}
+                                            placeholder="e.g., Pouch B"
+                                            disabled={assetFieldsDisabled}
+                                        />
+                                    </div>
+                                    <div className="form-field">
+                                        <Typography.Text>BLE ID</Typography.Text>
+                                        <select
+                                            className="form-select"
+                                            value={deviceForm.narcoticsPouch2BleId}
+                                            onChange={(e) => setDeviceForm({ ...deviceForm, narcoticsPouch2BleId: e.target.value })}
+                                            disabled={assetFieldsDisabled}
+                                        >
+                                            <option value="">
+                                                {selectedPi
+                                                    ? 'Select device address'
+                                                    : 'Select Raspberry Pi first'}
                                             </option>
-                                        ))}
-                                    </select>
+                                            {getBleOptionsForType('POUCH').map((device, index) => (
+                                                <option
+                                                    key={`${device.address || 'pouch'}-${index}`}
+                                                    value={device.address || ''}
+                                                >
+                                                    {device.address || 'No address'}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </fieldset>
 
                     <div className="modal-actions">

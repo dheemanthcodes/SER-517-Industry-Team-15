@@ -81,6 +81,82 @@ def _validate_assigned_ble_identifiers(normalized_assets, raspberry_pi_name: str
     return selected_pi, available_identifiers
 
 
+def _pair_assets_with_parent_ids(normalized_assets):
+    boxes = [asset for asset in normalized_assets if asset["type"] == "BOX"]
+    pouches = [asset for asset in normalized_assets if asset["type"] == "POUCH"]
+
+    if len(boxes) not in {1, 2}:
+        raise HTTPException(status_code=400, detail="Ambulances must have 1 or 2 boxes")
+    if len(pouches) != len(boxes):
+        raise HTTPException(status_code=400, detail="Each box must have exactly one pouch")
+
+    for box in boxes:
+        box["parent_asset_id"] = None
+
+    for index, pouch in enumerate(pouches):
+        pouch["parent_asset_id"] = boxes[index].get("id")
+
+    return boxes + pouches
+
+
+def _build_asset_rows_for_create(vehicle_id: str, normalized_assets):
+    ordered_assets = _pair_assets_with_parent_ids(normalized_assets)
+    box_rows = []
+    pouch_rows = []
+
+    for asset in ordered_assets:
+        asset_row = {
+            "id": str(uuid4()),
+            "vehicle_id": vehicle_id,
+            "type": asset["type"],
+            "label": asset["label"],
+            "ble_identifier": asset["ble_identifier"],
+            "parent_asset_id": None,
+            "is_active": True,
+        }
+
+        if asset["type"] == "BOX":
+            box_rows.append(asset_row)
+        else:
+            pouch_rows.append(asset_row)
+
+    for index, pouch_row in enumerate(pouch_rows):
+        pouch_row["parent_asset_id"] = box_rows[index]["id"]
+
+    return box_rows + pouch_rows
+
+
+def _ensure_unique_unit_number(unit_number: str, exclude_vehicle_id: str | None = None):
+    query = (
+        supabase.table("vehicles")
+        .select("id")
+        .eq("unit_number", unit_number)
+        .limit(1)
+    )
+
+    if exclude_vehicle_id:
+        query = query.neq("id", exclude_vehicle_id)
+
+    existing_vehicle = query.execute().data or []
+    if existing_vehicle:
+        raise HTTPException(status_code=409, detail="An ambulance with this unit number already exists")
+
+
+def _load_active_vehicle_assets(vehicle_id: str):
+    if not vehicle_id:
+        return []
+
+    return (
+        supabase.table("assets")
+        .select("id, type")
+        .eq("vehicle_id", vehicle_id)
+        .neq("is_active", False)
+        .execute()
+        .data
+        or []
+    )
+
+
 def _upsert_asset_status_rows(asset_rows):
     now_iso = datetime.now(timezone.utc).isoformat()
     status_rows = [
@@ -98,6 +174,95 @@ def _upsert_asset_status_rows(asset_rows):
 
     if status_rows:
         supabase.table("asset_status").upsert(status_rows).execute()
+
+
+def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
+    current_assets_by_id = {
+        asset["id"]: asset
+        for asset in _load_active_vehicle_assets(vehicle_id)
+        if asset.get("id")
+    }
+    ordered_assets = _pair_assets_with_parent_ids(normalized_assets)
+    boxes = [asset for asset in ordered_assets if asset["type"] == "BOX"]
+    pouches = [asset for asset in ordered_assets if asset["type"] == "POUCH"]
+    box_asset_ids = []
+    kept_asset_ids = set()
+    persisted_asset_rows = []
+
+    for box in boxes:
+        existing_asset = current_assets_by_id.get(box.get("id"))
+        asset_id = existing_asset["id"] if existing_asset else str(uuid4())
+
+        asset_row = {
+            "id": asset_id,
+            "vehicle_id": vehicle_id,
+            "type": "BOX",
+            "label": box["label"],
+            "ble_identifier": box["ble_identifier"],
+            "parent_asset_id": None,
+            "is_active": True,
+        }
+
+        if existing_asset:
+            supabase.table("assets").update(
+                {
+                    "vehicle_id": asset_row["vehicle_id"],
+                    "label": asset_row["label"],
+                    "ble_identifier": asset_row["ble_identifier"],
+                    "parent_asset_id": None,
+                    "is_active": True,
+                }
+            ).eq("id", asset_id).execute()
+        else:
+            supabase.table("assets").insert(asset_row).execute()
+
+        box_asset_ids.append(asset_id)
+        kept_asset_ids.add(asset_id)
+        persisted_asset_rows.append({"id": asset_id, "vehicle_id": vehicle_id})
+
+    for index, pouch in enumerate(pouches):
+        existing_asset = current_assets_by_id.get(pouch.get("id"))
+        asset_id = existing_asset["id"] if existing_asset else str(uuid4())
+
+        asset_row = {
+            "id": asset_id,
+            "vehicle_id": vehicle_id,
+            "type": "POUCH",
+            "label": pouch["label"],
+            "ble_identifier": pouch["ble_identifier"],
+            "parent_asset_id": box_asset_ids[index],
+            "is_active": True,
+        }
+
+        if existing_asset:
+            supabase.table("assets").update(
+                {
+                    "vehicle_id": asset_row["vehicle_id"],
+                    "label": asset_row["label"],
+                    "ble_identifier": asset_row["ble_identifier"],
+                    "parent_asset_id": asset_row["parent_asset_id"],
+                    "is_active": True,
+                }
+            ).eq("id", asset_id).execute()
+        else:
+            supabase.table("assets").insert(asset_row).execute()
+
+        kept_asset_ids.add(asset_id)
+        persisted_asset_rows.append({"id": asset_id, "vehicle_id": vehicle_id})
+
+    retired_asset_ids = [
+        asset_id for asset_id in current_assets_by_id if asset_id not in kept_asset_ids
+    ]
+    for asset_id in retired_asset_ids:
+        supabase.table("assets").update(
+            {
+                "vehicle_id": None,
+                "parent_asset_id": None,
+                "is_active": False,
+            }
+        ).eq("id", asset_id).execute()
+
+    return persisted_asset_rows
 
 
 @router.get("/api/fetchpidetails", summary="Get full dashboard snapshot")
@@ -137,12 +302,14 @@ def delete_ambulance(vehicle_id: str):
 @router.post("/api/registerambulance", summary="Create an ambulance and assign a Raspberry Pi")
 def register_ambulance(payload: dict):
     unit_number = (payload.get("unit_number") or "").strip()
-    station_name = (payload.get("station_name") or "").strip() or "Main Station"
+    station_name = (payload.get("station_name") or "").strip()
     raspberry_pi_name = (payload.get("raspberry_pi_name") or "").strip()
     assets_payload = payload.get("assets", [])
 
     if not unit_number:
         raise HTTPException(status_code=400, detail="'unit_number' is required")
+    if not station_name:
+        raise HTTPException(status_code=400, detail="'station_name' is required")
     if not raspberry_pi_name:
         raise HTTPException(status_code=400, detail="'raspberry_pi_name' is required")
 
@@ -155,9 +322,6 @@ def register_ambulance(payload: dict):
         for asset in assets_payload
     ]
 
-    if len(normalized_assets) != 4:
-        raise HTTPException(status_code=400, detail="Exactly four assets are required")
-
     if any(not asset["label"] for asset in normalized_assets):
         raise HTTPException(status_code=400, detail="All asset labels are required")
     if any(not asset["ble_identifier"] for asset in normalized_assets):
@@ -167,32 +331,11 @@ def register_ambulance(payload: dict):
         raise HTTPException(status_code=400, detail="Asset types must be BOX or POUCH")
 
     try:
-        existing_vehicle = (
-            supabase.table("vehicles")
-            .select("id")
-            .eq("unit_number", unit_number)
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        if existing_vehicle:
-            raise HTTPException(status_code=409, detail="An ambulance with this unit number already exists")
-
+        _ensure_unique_unit_number(unit_number)
         selected_pi, _ = _validate_assigned_ble_identifiers(normalized_assets, raspberry_pi_name)
 
         vehicle_id = str(uuid4())
-        asset_rows = [
-            {
-                "id": str(uuid4()),
-                "vehicle_id": vehicle_id,
-                "type": asset["type"],
-                "label": asset["label"],
-                "ble_identifier": asset["ble_identifier"],
-                "is_active": True,
-            }
-            for asset in normalized_assets
-        ]
+        asset_rows = _build_asset_rows_for_create(vehicle_id, normalized_assets)
 
         vehicle_insert = (
             supabase.table("vehicles")
@@ -261,6 +404,8 @@ def update_ambulance(payload: dict):
         raise HTTPException(status_code=400, detail="'vehicle_id' is required")
     if not unit_number:
         raise HTTPException(status_code=400, detail="'unit_number' is required")
+    if not station_name:
+        raise HTTPException(status_code=400, detail="'station_name' is required")
 
     normalized_assets = [
         {
@@ -268,6 +413,7 @@ def update_ambulance(payload: dict):
             "type": (a.get("type") or "").strip().upper(),
             "label": (a.get("label") or "").strip(),
             "ble_identifier": _normalize_ble_identifier(a.get("ble_identifier") or ""),
+            "parent_asset_id": a.get("parent_asset_id"),
         }
         for a in assets_payload
         if a.get("id")
@@ -280,7 +426,10 @@ def update_ambulance(payload: dict):
     if any(asset["type"] not in {"BOX", "POUCH"} for asset in normalized_assets):
         raise HTTPException(status_code=400, detail="Asset types must be BOX or POUCH")
 
+    normalized_assets = _pair_assets_with_parent_ids(normalized_assets)
+
     try:
+        _ensure_unique_unit_number(unit_number, exclude_vehicle_id=vehicle_id)
         supabase.table("vehicles").update(
             {
                 "unit_number": unit_number,
@@ -317,24 +466,8 @@ def update_ambulance(payload: dict):
             ).execute()
 
         if normalized_assets:
-            for asset in normalized_assets:
-                asset_id = asset["id"]
-                supabase.table("assets").update(
-                    {
-                        "label": asset.get("label"),
-                        "vehicle_id": vehicle_id,
-                        "ble_identifier": asset["ble_identifier"],
-                    }
-                ).eq("id", asset_id).execute()
-            _upsert_asset_status_rows(
-                [
-                    {
-                        "id": asset["id"],
-                        "vehicle_id": vehicle_id,
-                    }
-                    for asset in normalized_assets
-                ]
-            )
+            persisted_asset_rows = _sync_vehicle_assets(vehicle_id, normalized_assets)
+            _upsert_asset_status_rows(persisted_asset_rows)
 
         try:
             supabase.table("alerts").insert(

@@ -33,6 +33,7 @@ const normalizeAllDetailsRows = (rows) => {
                 id: row.asset_id,
                 type: row?.asset_type || '',
                 label: row?.label || '',
+                parent_asset_id: row?.parent_asset_id || null,
                 ble_tag: {
                     identifier: row?.ble_identifier || '',
                     tag_model: row?.tag_model || ''
@@ -62,7 +63,7 @@ const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], b
     }
 
     for (const asset of Array.isArray(assets) ? assets : []) {
-        if (!asset?.vehicle_id) continue
+        if (!asset?.vehicle_id || asset?.is_active === false) continue
 
         const vehicleAssets = assetsByVehicleId.get(asset.vehicle_id) || []
         vehicleAssets.push(asset)
@@ -88,6 +89,7 @@ const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], b
                     id: asset?.id,
                     type: asset?.type || '',
                     label: asset?.label || '',
+                    parent_asset_id: asset?.parent_asset_id || null,
                     ble_tag: {
                         identifier: asset?.ble_identifier || '',
                         tag_model: bleTag?.tag_model || ''
@@ -96,6 +98,68 @@ const buildVehiclesFromSupabase = ({ vehicles = [], devices = [], assets = [], b
             })
         }
     })
+}
+
+const buildAssetsFromFormData = (formData) => {
+    const boxCount = formData.boxCount === '2' ? 2 : 1
+    const assets = [
+        {
+            type: 'BOX',
+            label: (formData.drugBox1Label || '').trim(),
+            ble_identifier: (formData.drugBox1BleId || '').trim()
+        },
+        {
+            type: 'POUCH',
+            label: (formData.narcoticsPouch1Label || '').trim(),
+            ble_identifier: (formData.narcoticsPouch1BleId || '').trim()
+        }
+    ]
+
+    if (boxCount === 2) {
+        assets.push(
+            {
+                type: 'BOX',
+                label: (formData.drugBox2Label || '').trim(),
+                ble_identifier: (formData.drugBox2BleId || '').trim()
+            },
+            {
+                type: 'POUCH',
+                label: (formData.narcoticsPouch2Label || '').trim(),
+                ble_identifier: (formData.narcoticsPouch2BleId || '').trim()
+            }
+        )
+    }
+
+    return assets
+}
+
+const createEditableAsset = (type, index) => ({
+    id: `new-${type.toLowerCase()}-${index}-${Date.now()}`,
+    type,
+    label: '',
+    parent_asset_id: null,
+    ble_tag: {
+        identifier: '',
+        tag_model: ''
+    }
+})
+
+const buildEditableAssetsForBoxCount = (assets = [], boxCount = 1) => {
+    const boxes = (assets || []).filter((asset) => asset.type === 'BOX')
+    const pouches = (assets || []).filter((asset) => asset.type === 'POUCH')
+    const nextAssets = [
+        boxes[0] || createEditableAsset('BOX', 1),
+        pouches[0] || createEditableAsset('POUCH', 1)
+    ]
+
+    if (boxCount === 2) {
+        nextAssets.push(
+            boxes[1] || createEditableAsset('BOX', 2),
+            pouches[1] || createEditableAsset('POUCH', 2)
+        )
+    }
+
+    return nextAssets
 }
 
 function DeviceManagement({ isActive = true }) {
@@ -152,7 +216,7 @@ function DeviceManagement({ isActive = true }) {
         ] = await Promise.all([
             supabase.from('vehicles').select('*'),
             supabase.from('devices').select('*').neq('is_active', false),
-            supabase.from('assets').select('*'),
+            supabase.from('assets').select('*').neq('is_active', false),
             supabase.from('ble_tags').select('*')
         ])
 
@@ -321,6 +385,10 @@ function DeviceManagement({ isActive = true }) {
         }
 
         const copy = JSON.parse(JSON.stringify(vehicle))
+        copy.assets = buildEditableAssetsForBoxCount(
+            copy.assets,
+            (copy.assets || []).filter((asset) => asset.type === 'BOX').length === 2 ? 2 : 1
+        )
         setEditingVehicleId(vehicle.id)
         setEditingVehicleData(copy)
         setEditingError('')
@@ -410,6 +478,19 @@ function DeviceManagement({ isActive = true }) {
         })
     }
 
+    const handleEditBoxCountChange = (value) => {
+        const boxCount = value === '2' ? 2 : 1
+
+        setEditingVehicleData((prev) => {
+            if (!prev) return prev
+
+            return {
+                ...prev,
+                assets: buildEditableAssetsForBoxCount(prev.assets, boxCount)
+            }
+        })
+    }
+
     const getFirstAvailableBleAddress = (vehicleData, assetId, assetType) => {
         const selectedPiName = vehicleData?.raspberry_pi?.name
         if (!selectedPiName) return ''
@@ -456,9 +537,14 @@ function DeviceManagement({ isActive = true }) {
         const vehicleIdToSave = editingVehicleId
         const vehicleDataToSave = editingVehicleData
         const unitNumber = (vehicleDataToSave.unit_number || '').trim()
+        const stationName = (vehicleDataToSave.station_name || '').trim()
 
         if (!unitNumber) {
             setEditingError('Unit number is required.')
+            return
+        }
+        if (!stationName) {
+            setEditingError('Station name is required.')
             return
         }
 
@@ -481,12 +567,13 @@ function DeviceManagement({ isActive = true }) {
             const payload = {
                 vehicle_id: vehicleIdToSave,
                 unit_number: unitNumber,
-                station_name: (vehicleDataToSave.station_name || '').trim(),
+                station_name: stationName,
                 raspberry_pi_name: vehicleDataToSave.raspberry_pi?.name || '',
                 assets: (vehicleDataToSave.assets || []).map((asset) => ({
                     id: asset.id,
                     type: asset.type,
                     label: asset.label,
+                    parent_asset_id: asset.parent_asset_id || null,
                     ble_identifier:
                         asset.ble_tag && typeof asset.ble_tag.identifier === 'string'
                             ? asset.ble_tag.identifier.trim()
@@ -503,13 +590,7 @@ function DeviceManagement({ isActive = true }) {
             const json = await res.json()
             if (!res.ok) throw new Error(json.detail || json.message || 'Update failed')
 
-            setVehicles((prev) =>
-                prev.map((vehicle) =>
-                    vehicle.id === vehicleIdToSave
-                        ? JSON.parse(JSON.stringify(vehicleDataToSave))
-                        : vehicle
-                )
-            )
+            await fetchVehicles()
             await fetchPiDetails()
             setExpandedVehicle(vehicleIdToSave)
             setEditingVehicleId(null)
@@ -565,38 +646,19 @@ function DeviceManagement({ isActive = true }) {
 
     const handleAddSampleVehicle = (formData) => {
         const newVehicleId = `sample-${Date.now()}`
+        const assets = buildAssetsFromFormData(formData)
 
         const newVehicle = {
             id: newVehicleId,
             unit_number: formData.ambulanceNumber,
-            station_name: 'Main Station',
+            station_name: formData.stationName,
             created_at: new Date().toISOString(),
-            assets: [
-                {
-                    id: `box-1-${newVehicleId}`,
-                    type: 'BOX',
-                    label: formData.drugBox1Label,
-                    ble_tag: { identifier: formData.drugBox1BleId }
-                },
-                {
-                    id: `box-2-${newVehicleId}`,
-                    type: 'BOX',
-                    label: formData.drugBox2Label,
-                    ble_tag: { identifier: formData.drugBox2BleId }
-                },
-                {
-                    id: `pouch-1-${newVehicleId}`,
-                    type: 'POUCH',
-                    label: formData.narcoticsPouch1Label,
-                    ble_tag: { identifier: formData.narcoticsPouch1BleId }
-                },
-                {
-                    id: `pouch-2-${newVehicleId}`,
-                    type: 'POUCH',
-                    label: formData.narcoticsPouch2Label,
-                    ble_tag: { identifier: formData.narcoticsPouch2BleId }
-                }
-            ]
+            assets: assets.map((asset, index) => ({
+                id: `${asset.type.toLowerCase()}-${index + 1}-${newVehicleId}`,
+                type: asset.type,
+                label: asset.label,
+                ble_tag: { identifier: asset.ble_identifier }
+            }))
         }
 
         setVehicles((prev) => [...prev, newVehicle])
@@ -616,44 +678,25 @@ function DeviceManagement({ isActive = true }) {
 
     const handleRegisterAmbulance = async (formData) => {
         const unitNumber = (formData.ambulanceNumber || '').trim()
+        const stationName = (formData.stationName || '').trim()
         const selectedPiKey = (formData.raspberryPiKey || '').trim()
-        const box1Label = (formData.drugBox1Label || '').trim()
-        const box2Label = (formData.drugBox2Label || '').trim()
-        const pouch1Label = (formData.narcoticsPouch1Label || '').trim()
-        const pouch2Label = (formData.narcoticsPouch2Label || '').trim()
+        const assets = buildAssetsFromFormData(formData)
         if (!unitNumber) throw new Error('Unit number is required.')
+        if (!stationName) throw new Error('Station name is required.')
         if (!selectedPiKey) throw new Error('Please select a Raspberry Pi.')
-        if (!box1Label || !box2Label || !pouch1Label || !pouch2Label) {
-            throw new Error('All asset labels are required.')
+        if (assets.some((asset) => !asset.label)) {
+            throw new Error('Each configured box and pouch needs a label.')
+        }
+        if (assets.some((asset) => !asset.ble_identifier)) {
+            throw new Error('Each configured box and pouch needs a BLE ID.')
         }
 
         try {
             const payload = {
                 unit_number: unitNumber,
-                station_name: 'Main Station',
+                station_name: stationName,
                 raspberry_pi_name: selectedPiKey,
-                assets: [
-                    {
-                        type: 'BOX',
-                        label: box1Label,
-                        ble_identifier: (formData.drugBox1BleId || '').trim()
-                    },
-                    {
-                        type: 'BOX',
-                        label: box2Label,
-                        ble_identifier: (formData.drugBox2BleId || '').trim()
-                    },
-                    {
-                        type: 'POUCH',
-                        label: pouch1Label,
-                        ble_identifier: (formData.narcoticsPouch1BleId || '').trim()
-                    },
-                    {
-                        type: 'POUCH',
-                        label: pouch2Label,
-                        ble_identifier: (formData.narcoticsPouch2BleId || '').trim()
-                    }
-                ]
+                assets
             }
 
             const res = await fetch(`${apiBase}/api/registerambulance`, {
@@ -736,6 +779,7 @@ function DeviceManagement({ isActive = true }) {
                             const assets = currentVehicle.assets || []
                             const drugBoxes = assets.filter((a) => a.type === 'BOX') || []
                             const pouches = assets.filter((a) => a.type === 'POUCH') || []
+                            const currentBoxCount = drugBoxes.length === 2 ? '2' : '1'
 
                             const originalAssignedPi = vehicle.raspberry_pi?.name
                                 ? {
@@ -885,6 +929,28 @@ function DeviceManagement({ isActive = true }) {
                                                                 />
                                                             ) : (
                                                                 currentVehicle.station_name || '—'
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="vehicle-field">
+                                                        <div className="vehicle-field-label">Number of boxes</div>
+                                                        <div className="vehicle-field-value">
+                                                            {isEditing ? (
+                                                                <select
+                                                                    value={currentBoxCount}
+                                                                    onChange={(e) =>
+                                                                        handleEditBoxCountChange(
+                                                                            e.target.value
+                                                                        )
+                                                                    }
+                                                                    className="vehicle-asset-select"
+                                                                >
+                                                                    <option value="1">1 box</option>
+                                                                    <option value="2">2 boxes</option>
+                                                                </select>
+                                                            ) : (
+                                                                `${currentBoxCount} box${currentBoxCount === '2' ? 'es' : ''}`
                                                             )}
                                                         </div>
                                                     </div>
