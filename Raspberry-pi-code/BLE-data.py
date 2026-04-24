@@ -12,6 +12,9 @@ PI_DEVICE_ID = os.getenv("PI_DEVICE_ID", "pi-001")
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "60"))
 
 pending_results = []
+last_detection_at = None
+last_detection_rssi = None
+current_batch_started_at = None
 
 
 def now_iso():
@@ -155,21 +158,32 @@ def build_result(device, advertisement_data):
 
 
 def detection_callback(device, advertisement_data):
+    global last_detection_at, last_detection_rssi
+
     if device.address.upper() != TARGET_MAC:
         return
 
     result = build_result(device, advertisement_data)
     pending_results.append(result)
+    last_detection_at = result["timestamp"]
+    last_detection_rssi = result["rssi"]
 
     print(json.dumps(result, indent=2))
     print(f"Queued records: {len(pending_results)}")
     print("-" * 60)
 
 
-def post_batch(batch):
+def post_batch(batch, batch_started_at, batch_sent_at):
     payload = json.dumps({
         "device_id": PI_DEVICE_ID,
-        "sent_at": now_iso(),
+        "target_mac": TARGET_MAC,
+        "scanner_status": "running",
+        "batch_started_at": batch_started_at,
+        "sent_at": batch_sent_at,
+        "has_detection": bool(batch),
+        "records_count": len(batch),
+        "last_detection_at": last_detection_at,
+        "last_known_rssi": last_detection_rssi,
         "records": batch,
     }).encode("utf-8")
 
@@ -185,16 +199,29 @@ def post_batch(batch):
 
 
 async def flush_batches_periodically():
+    global current_batch_started_at
+
     while True:
         await asyncio.sleep(BATCH_INTERVAL_SECONDS)
 
         batch = list(pending_results)
+        batch_started_at = current_batch_started_at
+        batch_sent_at = now_iso()
 
         try:
-            status, response_body = await asyncio.to_thread(post_batch, batch)
+            status, response_body = await asyncio.to_thread(
+                post_batch,
+                batch,
+                batch_started_at,
+                batch_sent_at,
+            )
             if batch:
                 del pending_results[:len(batch)]
-            print(f"Sent batch with {len(batch)} records to backend. Status: {status}")
+            current_batch_started_at = batch_sent_at
+            print(
+                f"Sent batch with {len(batch)} records to backend. "
+                f"Detected in interval: {bool(batch)}. Status: {status}"
+            )
             print(response_body)
         except error.URLError as exc:
             print(f"Failed to send batch to backend: {exc}")
@@ -203,6 +230,10 @@ async def flush_batches_periodically():
 
 
 async def main():
+    global current_batch_started_at
+
+    current_batch_started_at = now_iso()
+
     print(f"Scanning continuously for beacon {TARGET_MAC}")
     print(f"Batch upload target: {BACKEND_PI_DATA_URL}")
     print(f"Batch interval: {BATCH_INTERVAL_SECONDS} seconds\n")
