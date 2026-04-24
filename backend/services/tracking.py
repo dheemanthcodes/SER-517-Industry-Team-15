@@ -62,12 +62,23 @@ def safe_float(value: Any) -> Optional[float]:
         return None
 
 
-def extract_device_key(payload: Dict[str, Any]) -> str:
+def safe_int(value: Any) -> Optional[int]:
+    numeric_value = safe_float(value)
+    if numeric_value is None:
+        return None
+
+    return int(round(numeric_value))
+
+
+def extract_device_keys(payload: Dict[str, Any]) -> List[str]:
+    keys: List[str] = []
+
     for key in ("device_id", "device_name", "pi_name", "pi_id"):
         candidate = str(payload.get(key) or "").strip()
-        if candidate:
-            return candidate
-    return ""
+        if candidate and candidate not in keys:
+            keys.append(candidate)
+
+    return keys
 
 
 def extract_payload_observed_at(payload: Dict[str, Any], fallback: datetime) -> datetime:
@@ -147,16 +158,17 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         or []
     )
 
-    device_key = extract_device_key(payload)
+    device_keys = extract_device_keys(payload)
     vehicle_id = str(payload.get("vehicle_id") or "").strip() or None
     device_row = None
 
-    if device_key:
+    if device_keys:
         for candidate in device_rows:
-            if device_key in {
+            candidate_keys = {
                 str(candidate.get("device_name") or "").strip(),
                 str(candidate.get("id") or "").strip(),
-            }:
+            }
+            if any(device_key in candidate_keys for device_key in device_keys):
                 device_row = candidate
                 break
 
@@ -272,7 +284,7 @@ def insert_presence_event_row(
             "vehicle_id": vehicle_id,
             "device_id": device_id,
             "state": state,
-            "rssi": rssi,
+            "rssi": safe_int(rssi),
             "observed_at": to_iso8601(observed_at),
             "received_at": to_iso8601(utc_now()),
         }
