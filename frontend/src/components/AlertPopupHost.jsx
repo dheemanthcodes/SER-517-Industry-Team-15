@@ -4,6 +4,35 @@ import AlertPopup from "./AlertPopup"
 import { fetchOpenAlerts, isPopupEligibleAlert } from "../utils/alertStore"
 
 const PREVIEW_ALERT_ID = "preview-alert-popup"
+const DISMISSED_ALERT_IDS_STORAGE_KEY = "dismissedAlertPopupIds"
+const MAX_DISMISSED_ALERT_IDS = 200
+
+const readDismissedAlertIds = () => {
+  if (typeof window === "undefined") return []
+
+  try {
+    const storedValue = window.localStorage.getItem(DISMISSED_ALERT_IDS_STORAGE_KEY)
+    const parsedValue = storedValue ? JSON.parse(storedValue) : []
+
+    return Array.isArray(parsedValue) ? parsedValue.filter(Boolean) : []
+  } catch (error) {
+    console.error("Error reading dismissed alert IDs:", error)
+    return []
+  }
+}
+
+const writeDismissedAlertIds = (alertIds) => {
+  if (typeof window === "undefined") return
+
+  try {
+    window.localStorage.setItem(
+      DISMISSED_ALERT_IDS_STORAGE_KEY,
+      JSON.stringify(alertIds.slice(-MAX_DISMISSED_ALERT_IDS))
+    )
+  } catch (error) {
+    console.error("Error saving dismissed alert IDs:", error)
+  }
+}
 
 const getPreviewAlertFromQuery = () => {
   if (typeof window === "undefined") return null
@@ -34,7 +63,7 @@ const getPreviewAlertFromQuery = () => {
 function AlertPopupHost() {
   const [openAlerts, setOpenAlerts] = useState([])
   const [currentAlert, setCurrentAlert] = useState(null)
-  const [dismissedAlertIds, setDismissedAlertIds] = useState([])
+  const [dismissedAlertIds, setDismissedAlertIds] = useState(readDismissedAlertIds)
   const [previewAlert, setPreviewAlert] = useState(() => getPreviewAlertFromQuery())
 
   const loadOpenAlerts = useCallback(async () => {
@@ -91,9 +120,17 @@ function AlertPopupHost() {
   const handleClose = useCallback(() => {
     setCurrentAlert((prev) => {
       if (prev?.id) {
-        setDismissedAlertIds((currentIds) =>
-          currentIds.includes(prev.id) ? currentIds : [...currentIds, prev.id]
-        )
+        setDismissedAlertIds((currentIds) => {
+          const nextIds = currentIds.includes(prev.id)
+            ? currentIds
+            : [...currentIds, prev.id].slice(-MAX_DISMISSED_ALERT_IDS)
+
+          if (nextIds !== currentIds) {
+            writeDismissedAlertIds(nextIds)
+          }
+
+          return nextIds
+        })
       }
 
       if (prev?.id === PREVIEW_ALERT_ID) {
