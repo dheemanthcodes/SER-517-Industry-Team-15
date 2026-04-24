@@ -19,9 +19,9 @@ function EventHistory() {
             case 'OPEN':
                 return 'open'
             case 'ACK':
-                return 'resolved'
+                return 'in-progress'
             case 'CLOSED':
-                return 'closed'
+                return 'resolved'
             default:
                 return 'open'
         }
@@ -31,12 +31,38 @@ function EventHistory() {
         switch (uiStatus) {
             case 'open':
                 return 'OPEN'
-            case 'resolved':
+            case 'in-progress':
                 return 'ACK'
-            case 'closed':
+            case 'resolved':
                 return 'CLOSED'
             default:
                 return 'OPEN'
+        }
+    }
+
+    const formatAssetId = (alert) => {
+        const bleName = String(alert.bleName || '').trim()
+        const bleMacAddress = String(alert.bleMacAddress || '').trim()
+
+        if (bleName && bleMacAddress) {
+            return `${bleName} (${bleMacAddress})`
+        }
+
+        return bleName || bleMacAddress || alert.asset_id || ''
+    }
+
+    const mapAlertToEvent = (alert) => {
+        const isDeviceEvent = isDeviceAuditAlert(alert)
+
+        return {
+            id: alert.id,
+            asset_id: alert.asset_id,
+            assetDisplay: formatAssetId(alert),
+            vehicle: alert.vehicleLabel || alert.asset_id || 'Unknown',
+            details: alert.reason || alert.description || 'Alert',
+            status: isDeviceEvent ? '' : mapStatusToUI(alert.status),
+            observed_at: new Date(alert.opened_at).toLocaleString(),
+            isDeviceEvent,
         }
     }
 
@@ -46,19 +72,7 @@ function EventHistory() {
             setLoading(true)
 
             const alerts = await fetchAlertHistory()
-            const mappedEvents = alerts.map((alert) => {
-                const isDeviceEvent = isDeviceAuditAlert(alert)
-
-                return {
-                    id: alert.id,
-                    asset_id: alert.asset_id,
-                    vehicle: alert.vehicleLabel || alert.asset_id || 'Unknown',
-                    details: alert.reason || alert.description || 'Alert',
-                    status: isDeviceEvent ? '' : mapStatusToUI(alert.status),
-                    observed_at: new Date(alert.opened_at).toLocaleString(),
-                    isDeviceEvent,
-                }
-            })
+            const mappedEvents = alerts.map(mapAlertToEvent)
 
             setEvents(mappedEvents)
         } catch (err) {
@@ -91,17 +105,31 @@ function EventHistory() {
     const handleStatusChange = async (id, newStatus) => {
         const event = events.find((e) => e.id === id)
         if (!event || event.isDeviceEvent) return
+        if (event.status === 'resolved' && newStatus !== 'resolved') {
+            setError('Resolved alerts cannot be moved back to another status.')
+            return
+        }
 
         const dbStatus = mapUIToStatus(newStatus)
 
         try {
             setSavingId(id)
-            await updateAlertStatus(id, dbStatus)
+            setError('')
+
+            const updatedAlert = await updateAlertStatus(id, dbStatus)
+            if (updatedAlert) {
+                const updatedEvent = mapAlertToEvent(updatedAlert)
+                setEvents((currentEvents) =>
+                    currentEvents.map((currentEvent) =>
+                        currentEvent.id === id ? updatedEvent : currentEvent
+                    )
+                )
+            }
 
             await fetchAlerts()
         } catch (err) {
             console.error('Error updating status:', err)
-            setError('Failed to update event status.')
+            setError(err?.message || 'Failed to update event status.')
         } finally {
             setSavingId(null)
         }
@@ -118,6 +146,7 @@ function EventHistory() {
 
             const matchesSearch =
                 String(event.asset_id ?? '').toLowerCase().includes(searchValue) ||
+                String(event.assetDisplay ?? '').toLowerCase().includes(searchValue) ||
                 String(event.vehicle ?? '').toLowerCase().includes(searchValue) ||
                 String(event.details ?? '').toLowerCase().includes(searchValue) ||
                 eventStatus.includes(searchValue) ||
@@ -150,8 +179,8 @@ function EventHistory() {
                 >
                     <option value="all">All Status</option>
                     <option value="open">Open</option>
+                    <option value="in-progress">In progress</option>
                     <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
                 </select>
             </div>
 
@@ -171,7 +200,7 @@ function EventHistory() {
                 ) : filteredEvents.length > 0 ? (
                     filteredEvents.map((event) => (
                         <div key={event.id} className="event-history-row">
-                            <span>{event.asset_id || ''}</span>
+                            <span>{event.assetDisplay || ''}</span>
                             <span>{event.vehicle}</span>
                             <span className="event-history-details">{event.details}</span>
                             <span>{event.observed_at}</span>
@@ -180,12 +209,12 @@ function EventHistory() {
                                 <select
                                     className={`event-status event-status-${event.status.toLowerCase()}`}
                                     value={event.status}
-                                    disabled={savingId === event.id}
+                                    disabled={savingId === event.id || event.status === 'resolved'}
                                     onChange={(e) => handleStatusChange(event.id, e.target.value)}
                                 >
                                     <option value="open">open</option>
+                                    <option value="in-progress">in progress</option>
                                     <option value="resolved">resolved</option>
-                                    <option value="closed">closed</option>
                                 </select>
                             ) : (
                                 <span></span>

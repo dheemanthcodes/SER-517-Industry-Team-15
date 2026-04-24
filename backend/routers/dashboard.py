@@ -176,6 +176,34 @@ def _upsert_asset_status_rows(asset_rows):
         supabase.table("asset_status").upsert(status_rows).execute()
 
 
+def _build_alert_status_update(status: str):
+    normalized_status = str(status or "").strip().upper()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if normalized_status == "OPEN":
+        return {
+            "status": "OPEN",
+            "acknowledged_at": None,
+            "closed_at": None,
+        }
+
+    if normalized_status in {"ACK", "IN_PROGRESS", "IN-PROGRESS"}:
+        return {
+            "status": "ACK",
+            "acknowledged_at": now_iso,
+            "closed_at": None,
+        }
+
+    if normalized_status in {"CLOSED", "RESOLVED"}:
+        return {
+            "status": "CLOSED",
+            "acknowledged_at": now_iso,
+            "closed_at": now_iso,
+        }
+
+    raise HTTPException(status_code=400, detail="Status must be OPEN, IN_PROGRESS, or RESOLVED")
+
+
 def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
     current_assets_by_id = {
         asset["id"]: asset
@@ -268,6 +296,71 @@ def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
 @router.get("/api/fetchpidetails", summary="Get full dashboard snapshot")
 def get_dashboard():
     return build_snapshot()
+
+
+@router.patch("/api/alerts/{alert_id}/status", summary="Update alert status")
+def update_alert_status(alert_id: str, payload: dict):
+    if not alert_id:
+        raise HTTPException(status_code=400, detail="'alert_id' is required")
+
+    update_payload = _build_alert_status_update(payload.get("status"))
+
+    try:
+        existing_rows = (
+            supabase.table("alerts")
+            .select("id, status")
+            .eq("id", alert_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+
+        if not existing_rows:
+            raise HTTPException(status_code=404, detail="Alert was not found")
+
+        current_status = str(existing_rows[0].get("status") or "").upper()
+        if current_status == "CLOSED" and update_payload["status"] != "CLOSED":
+            raise HTTPException(
+                status_code=409,
+                detail="Resolved alerts cannot be moved back to another status.",
+            )
+
+        (
+            supabase.table("alerts")
+            .update(update_payload)
+            .eq("id", alert_id)
+            .execute()
+        )
+        rows = (
+            supabase.table("alerts")
+            .select("*")
+            .eq("id", alert_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Alert was not found")
+
+        saved_status = str(rows[0].get("status") or "").upper()
+        expected_status = update_payload["status"]
+        if saved_status != expected_status:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Alert status did not update. Expected {expected_status}, found {saved_status or 'EMPTY'}.",
+            )
+
+        return {
+            "status": "success",
+            "data": rows[0],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete(

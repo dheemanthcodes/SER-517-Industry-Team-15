@@ -2324,6 +2324,11 @@ form+.sbui-divider {
     color: #dc2626;
 }
 
+.event-status-in-progress {
+    background: #fffbeb;
+    color: #b45309;
+}
+
 .event-status-completed {
     background: #ecfdf3;
     color: #16a34a;

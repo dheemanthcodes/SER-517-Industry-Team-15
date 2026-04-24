@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient"
+import apiBase from "../apiBase"
 
 const ALERT_SELECT = `id,
   asset_id,
@@ -134,28 +135,96 @@ export const fetchDashboardCounts = async () => {
   }
 }
 
-export const updateAlertStatus = async (id, status) => {
+const buildStatusUpdate = (status) => {
   const now = new Date().toISOString()
-  const update = { status }
+
+  if (status === "OPEN") {
+    return {
+      status: "OPEN",
+      acknowledged_at: null,
+      closed_at: null,
+    }
+  }
 
   if (status === "ACK") {
-    update.acknowledged_at = now
+    return {
+      status: "ACK",
+      acknowledged_at: now,
+      closed_at: null,
+    }
   }
 
   if (status === "CLOSED") {
-    update.closed_at = now
+    return {
+      status: "CLOSED",
+      acknowledged_at: now,
+      closed_at: now,
+    }
+  }
+
+  return { status }
+}
+
+const updateAlertStatusViaSupabase = async (id, status) => {
+  const { data: existingAlert, error: fetchError } = await supabase
+    .from("alerts")
+    .select("id, status")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (fetchError) throw fetchError
+  if (!existingAlert) throw new Error("Alert was not found.")
+  if (existingAlert.status === "CLOSED" && status !== "CLOSED") {
+    throw new Error("Resolved alerts cannot be moved back to another status.")
   }
 
   const { data, error } = await supabase
     .from("alerts")
-    .update(update)
+    .update(buildStatusUpdate(status))
     .eq("id", id)
     .select(ALERT_SELECT)
     .maybeSingle()
 
   if (error) throw error
+  if (!data) throw new Error("Alert status did not update. No row was returned.")
+  if (data.status !== status) {
+    throw new Error(`Alert status did not update. Expected ${status}, found ${data.status || "EMPTY"}.`)
+  }
 
-  return data ? (await buildAlertDetails([data]))[0] : null
+  return (await buildAlertDetails([data]))[0]
+}
+
+export const updateAlertStatus = async (id, status) => {
+  let response
+
+  try {
+    response = await fetch(`${apiBase}/api/alerts/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status }),
+    })
+  } catch {
+    return updateAlertStatusViaSupabase(id, status)
+  }
+
+  const json = await response.json().catch(() => ({}))
+
+  if (response.status === 404 || response.status === 405) {
+    return updateAlertStatusViaSupabase(id, status)
+  }
+
+  if (!response.ok) {
+    throw new Error(json?.detail || json?.message || "Failed to update alert status")
+  }
+
+  if (!json?.data) throw new Error("Alert status did not update. No row was returned.")
+  if (json.data.status !== status) {
+    throw new Error(`Alert status did not update. Expected ${status}, found ${json.data.status || "EMPTY"}.`)
+  }
+
+  return (await buildAlertDetails([json.data]))[0]
 }
 
 export const createAlert = async (alert) => {
