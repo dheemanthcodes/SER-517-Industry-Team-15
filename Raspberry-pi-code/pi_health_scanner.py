@@ -26,6 +26,7 @@ HTTP_TIMEOUT_SECONDS = int(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))
 pending_results = []
 tracked_ble_mappings = []
 tracked_mac_addresses = set()
+seen_mac_addresses_in_interval = set()
 last_detection_at = None
 last_detection_rssi = None
 current_batch_started_at = None
@@ -186,6 +187,7 @@ def build_result(device, advertisement_data):
         "device_id": PI_ID or PI_NAME,
         "device_name": PI_NAME,
         "pi_id": PI_ID or None,
+        "pi_name": PI_NAME,
         "address": normalized_address,
         "name": device.name
         or advertisement_data.local_name
@@ -203,6 +205,30 @@ def build_result(device, advertisement_data):
     }
 
 
+def build_missing_result(mapping, timestamp):
+    mac_address = normalize_mac_address(mapping.get("mac_address"))
+
+    return {
+        "device_id": PI_ID or PI_NAME,
+        "device_name": PI_NAME,
+        "pi_id": PI_ID or None,
+        "pi_name": PI_NAME,
+        "address": mac_address,
+        "name": mapping.get("name") or mac_address,
+        "mapped_name": mapping.get("name") or mac_address,
+        "ble_tag_id": mapping.get("ble_tag_id"),
+        "rssi": None,
+        "timestamp": timestamp,
+        "state": "MISSING",
+        "manufacturer_data": {},
+        "service_data": {},
+        "service_uuids": [],
+        "ibeacon": None,
+        "battery_level": None,
+        "minew_fake_ibeacon": None,
+    }
+
+
 def detection_callback(device, advertisement_data):
     global last_detection_at, last_detection_rssi
 
@@ -212,6 +238,7 @@ def detection_callback(device, advertisement_data):
 
     result = build_result(device, advertisement_data)
     pending_results.append(result)
+    seen_mac_addresses_in_interval.add(normalized_address)
     last_detection_at = result["timestamp"]
     last_detection_rssi = result["rssi"]
 
@@ -298,8 +325,9 @@ async def heartbeat_loop():
 
 def post_batch(batch, batch_started_at, batch_sent_at):
     payload = {
-        "device_id": PI_ID or PI_NAME,
+        "device_id": PI_ID or None,
         "device_name": PI_NAME,
+        "pi_name": PI_NAME,
         "pi_id": PI_ID or None,
         "scanner_status": "running",
         "tracked_mac_addresses": sorted(tracked_mac_addresses),
@@ -320,19 +348,28 @@ async def flush_batches_periodically():
     while True:
         await asyncio.sleep(BATCH_INTERVAL_SECONDS)
 
-        batch = list(pending_results)
-        batch_started_at = current_batch_started_at
         batch_sent_at = now_iso()
+        batch_started_at = current_batch_started_at
+        missing_records = [
+            build_missing_result(mapping, batch_sent_at)
+            for mapping in tracked_ble_mappings
+            if mapping.get("mac_address") not in seen_mac_addresses_in_interval
+        ]
+        batch = list(pending_results) + missing_records
 
         try:
+            print(
+                f"Sending batch to backend. Records: {len(batch)}. "
+                f"Missing records: {len(missing_records)}"
+            )
             status_code, response_body = await asyncio.to_thread(
                 post_batch,
                 batch,
                 batch_started_at,
                 batch_sent_at,
             )
-            if batch:
-                del pending_results[: len(batch)]
+            pending_results.clear()
+            seen_mac_addresses_in_interval.clear()
             current_batch_started_at = batch_sent_at
             print(
                 f"Sent batch with {len(batch)} record(s) to backend. "

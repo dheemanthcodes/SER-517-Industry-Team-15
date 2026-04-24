@@ -106,6 +106,19 @@ def extract_observation_list(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return observations
 
 
+def extract_tracked_identifiers(payload: Dict[str, Any]) -> set[str]:
+    tracked_identifiers = set()
+
+    raw_values = payload.get("tracked_mac_addresses")
+    if isinstance(raw_values, list):
+        for value in raw_values:
+            normalized = normalize_ble_identifier(value)
+            if normalized:
+                tracked_identifiers.add(normalized)
+
+    return tracked_identifiers
+
+
 def normalize_observations(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     fallback_time = extract_payload_observed_at(payload, utc_now())
     normalized: Dict[str, Dict[str, Any]] = {}
@@ -293,11 +306,29 @@ def insert_presence_event_row(
 def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
     batch_time = extract_payload_observed_at(payload, utc_now())
     observations_by_identifier = normalize_observations(payload)
+    tracked_identifiers = extract_tracked_identifiers(payload)
     context = load_tracking_context(payload)
 
     vehicle_id = (context.get("vehicle") or {}).get("id") or str(payload.get("vehicle_id") or "").strip()
-    assets = context.get("assets") or []
+    all_assets = context.get("assets") or []
     device = context.get("device") or {}
+    assets = all_assets
+
+    if tracked_identifiers:
+        assets = [
+            asset
+            for asset in all_assets
+            if normalize_ble_identifier(asset.get("ble_identifier")) in tracked_identifiers
+        ]
+
+    unmatched_asset_identifiers = sorted(
+        {
+            normalize_ble_identifier(asset.get("ble_identifier"))
+            for asset in all_assets
+            if normalize_ble_identifier(asset.get("ble_identifier"))
+            and normalize_ble_identifier(asset.get("ble_identifier")) not in tracked_identifiers
+        }
+    ) if tracked_identifiers else []
 
     if not vehicle_id or not assets:
         return {
@@ -307,6 +338,8 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
             "processed_assets": 0,
             "seen_assets": 0,
             "missing_assets": 0,
+            "tracked_identifiers": sorted(tracked_identifiers),
+            "unmatched_asset_identifiers": unmatched_asset_identifiers,
             "states": [],
         }
 
@@ -406,5 +439,7 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
         "processed_assets": len(state_rows),
         "seen_assets": seen_assets,
         "missing_assets": missing_assets,
+        "tracked_identifiers": sorted(tracked_identifiers),
+        "unmatched_asset_identifiers": unmatched_asset_identifiers,
         "states": state_rows,
     }
