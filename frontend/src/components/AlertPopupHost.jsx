@@ -18,6 +18,11 @@ const getPreviewAlertFromQuery = () => {
     asset_id: "Preview Asset",
     vehicle_id: null,
     vehicleLabel: "AMB-101",
+    ambulanceNumber: "AMB-101",
+    ambulanceName: "Station 7",
+    assetName: "Narcotics Pouch 1",
+    bleName: "Minew E8",
+    bleMacAddress: "AA:BB:CC:DD:EE:FF",
     status: "OPEN",
     reason: "Preview alert popup",
     title: "Preview alert popup",
@@ -99,15 +104,10 @@ function AlertPopupHost() {
     })
   }, [])
 
-  const handleUpdated = useCallback(async () => {
-    await loadOpenAlerts()
-  }, [loadOpenAlerts])
-
   return (
     <AlertPopup
       alert={currentAlert}
       onClose={handleClose}
-      onUpdated={handleUpdated}
     />
   )
 }
