@@ -23,6 +23,14 @@ class PiDetailsPayload(BaseModel):
     ip_address: str
 
 
+class PiHeartbeatPayload(BaseModel):
+    pi_id: Optional[str] = None
+    pi_name: Optional[str] = None
+    ip_address: Optional[str] = None
+    scanner_status: Optional[str] = "starting"
+    observed_at: Optional[str] = None
+
+
 class BleTagUpsertPayload(BaseModel):
     name: str
     identifier: str
@@ -40,6 +48,46 @@ def _is_valid_mac_address(value: str) -> bool:
 
     normalized = _normalize_ble_identifier(value)
     return bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", normalized))
+
+
+def _load_pi_by_identity(pi_id: str = "", pi_name: str = ""):
+    device_query = supabase.table("devices").select(
+        "id, device_name, ip_address, vehicle_id, is_active"
+    ).limit(1)
+
+    if pi_id:
+        device_query = device_query.eq("id", pi_id)
+    elif pi_name:
+        device_query = device_query.eq("device_name", pi_name)
+    else:
+        return None
+
+    devices = device_query.execute().data or []
+    return devices[0] if devices else None
+
+
+def _load_ble_mappings_for_pi(device_id: str):
+    if not device_id:
+        return []
+
+    rows = (
+        supabase.table("ble_tags")
+        .select("id, identifier, tag_model")
+        .eq("asset_id", device_id)
+        .execute()
+        .data
+        or []
+    )
+
+    return [
+        {
+            "ble_tag_id": row.get("id"),
+            "name": row.get("tag_model") or row.get("identifier") or "Unnamed BLE Device",
+            "mac_address": _normalize_ble_identifier(row.get("identifier")),
+        }
+        for row in rows
+        if _normalize_ble_identifier(row.get("identifier"))
+    ]
 
 
 @router.post(
@@ -75,6 +123,51 @@ def receive_pi_data(
         "message": "Raspberry Pi data received successfully",
         "data": latest_pi_payload,
     }
+
+
+@router.post("/api/pi/heartbeat", summary="Receive Raspberry Pi heartbeat and return BLE mappings")
+def receive_pi_heartbeat(payload: PiHeartbeatPayload):
+    normalized_pi_id = (payload.pi_id or "").strip()
+    normalized_pi_name = (payload.pi_name or "").strip()
+    normalized_ip_address = (payload.ip_address or "").strip()
+
+    if not normalized_pi_id and not normalized_pi_name:
+        raise HTTPException(status_code=400, detail="'pi_id' or 'pi_name' is required")
+
+    try:
+        device = _load_pi_by_identity(normalized_pi_id, normalized_pi_name)
+        if not device:
+            raise HTTPException(status_code=404, detail="Raspberry Pi was not found")
+
+        updates = {"is_active": True}
+        if normalized_ip_address:
+            updates["ip_address"] = normalized_ip_address
+
+        supabase.table("devices").update(updates).eq("id", device["id"]).execute()
+
+        refreshed_device = _load_pi_by_identity(device.get("id"), "")
+        ble_mappings = _load_ble_mappings_for_pi(device.get("id"))
+
+        return {
+            "status": "success",
+            "message": "Heartbeat received",
+            "data": {
+                "heartbeat_received_at": utc_now().isoformat(),
+                "scanner_status": payload.scanner_status or "starting",
+                "pi": {
+                    "id": (refreshed_device or device).get("id"),
+                    "name": (refreshed_device or device).get("device_name"),
+                    "ip_address": (refreshed_device or device).get("ip_address"),
+                    "vehicle_id": (refreshed_device or device).get("vehicle_id"),
+                    "is_active": (refreshed_device or device).get("is_active"),
+                },
+                "ble_mappings": ble_mappings,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get(
