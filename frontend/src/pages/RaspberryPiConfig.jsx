@@ -46,6 +46,7 @@ function RaspberryPiConfig() {
     const [newPiIp, setNewPiIp] = useState('')
     const [addPiMessage, setAddPiMessage] = useState('')
     const [deletingPiKey, setDeletingPiKey] = useState('')
+    const [piPendingDelete, setPiPendingDelete] = useState(null)
 
     const toggleExpand = (piKey) => {
         setExpandedPis((prev) => {
@@ -149,11 +150,26 @@ function RaspberryPiConfig() {
         }
     }
 
+    useEffect(() => {
+        if (!piPendingDelete) return undefined
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape' && deletingPiKey !== piPendingDelete?.piKey) {
+                setPiPendingDelete(null)
+            }
+        }
+
+        window.addEventListener('keydown', handleEscape)
+        return () => window.removeEventListener('keydown', handleEscape)
+    }, [piPendingDelete, deletingPiKey])
+
+    const requestDeletePi = (pi) => {
+        if (!pi?.piKey) return
+        setPiPendingDelete(pi)
+    }
+
     const handleDeletePi = async (pi) => {
         if (!pi?.piKey) return
-
-        const confirmed = window.confirm(`Delete Raspberry Pi "${pi.piKey}"?`)
-        if (!confirmed) return
 
         setDeletingPiKey(pi.piKey)
         setAddPiMessage(`Deleting ${pi.piKey}...`)
@@ -192,6 +208,7 @@ function RaspberryPiConfig() {
             setAddPiMessage(e?.message || 'Failed to delete Raspberry Pi.')
         } finally {
             setDeletingPiKey('')
+            setPiPendingDelete(null)
         }
     }
 
@@ -474,7 +491,7 @@ function RaspberryPiConfig() {
                                                     Manage Bluetooth Devices
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeletePi(pi)}
+                                                    onClick={() => requestDeletePi(pi)}
                                                     className="btn-danger-outline"
                                                     disabled={deletingPiKey === pi.piKey}
                                                 >
@@ -502,7 +519,7 @@ function RaspberryPiConfig() {
                                 </span>
                             </h2>
                             <button
-                                onClick={() => handleDeletePi(selectedPi)}
+                                onClick={() => requestDeletePi(selectedPi)}
                                 className="btn-danger-outline"
                                 disabled={deletingPiKey === selectedPi.piKey}
                             >
@@ -602,6 +619,48 @@ function RaspberryPiConfig() {
                     </div>
                 </div>
             )}
+
+            {piPendingDelete ? (
+                <div
+                    className="modal-overlay"
+                    onClick={() => deletingPiKey !== piPendingDelete.piKey && setPiPendingDelete(null)}
+                >
+                    <div
+                        className="modal-content pi-delete-modal"
+                        onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="pi-delete-modal-title"
+                    >
+                        <div className="pi-delete-modal-body">
+                            <h3 id="pi-delete-modal-title" className="pi-delete-modal-title">
+                                Delete Raspberry Pi?
+                            </h3>
+                            <p className="pi-delete-modal-text">
+                                This will remove <strong>{piPendingDelete.piKey}</strong> from the configuration.
+                            </p>
+                            <div className="pi-delete-modal-actions">
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => setPiPendingDelete(null)}
+                                    disabled={deletingPiKey === piPendingDelete.piKey}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn-danger-outline"
+                                    onClick={() => handleDeletePi(piPendingDelete)}
+                                    disabled={deletingPiKey === piPendingDelete.piKey}
+                                >
+                                    {deletingPiKey === piPendingDelete.piKey ? 'Deleting...' : 'Delete Pi'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </div>
     )
 }

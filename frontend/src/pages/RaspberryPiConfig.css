@@ -560,3 +560,33 @@
 .compact-row .device-info .muted {
     font-size: 12px;
 }
+
+.pi-delete-modal {
+    max-width: 440px;
+}
+
+.pi-delete-modal-body {
+    padding: 28px;
+}
+
+.pi-delete-modal-title {
+    margin: 0 0 12px 0;
+    font-size: 22px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.pi-delete-modal-text {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #4b5563;
+}
+
+.pi-delete-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
