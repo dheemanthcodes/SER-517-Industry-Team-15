@@ -8,17 +8,77 @@ const ALERT_SELECT = `id,
   opened_at,
   acknowledged_at,
   closed_at,
-  vehicles ( unit_number )
+  vehicles ( unit_number, station_name )
 `
 
 const DEVICE_AUDIT_PREFIX = "Device "
 
-const normalizeAlert = (row) => ({
-  ...row,
-  vehicleLabel: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown vehicle",
-  title: row?.reason ?? "Alert",
-  description: row?.reason ?? "",
-})
+const buildAlertDetails = async (rows) => {
+  const assetIds = Array.from(
+    new Set((rows ?? []).map((row) => row?.asset_id).filter(Boolean))
+  )
+
+  const { data: assetsData, error: assetsError } = assetIds.length
+    ? await supabase
+        .from("assets")
+        .select("id, vehicle_id, label, type, ble_identifier")
+        .in("id", assetIds)
+    : { data: [], error: null }
+
+  if (assetsError) throw assetsError
+
+  const bleIdentifiers = Array.from(
+    new Set(
+      (assetsData ?? [])
+        .map((asset) => (asset?.ble_identifier || "").trim())
+        .filter(Boolean)
+    )
+  )
+
+  const { data: bleTagsData, error: bleTagsError } = bleIdentifiers.length
+    ? await supabase
+        .from("ble_tags")
+        .select("identifier, tag_model")
+        .in("identifier", bleIdentifiers)
+    : { data: [], error: null }
+
+  if (bleTagsError) throw bleTagsError
+
+  const assetsById = new Map((assetsData ?? []).map((asset) => [asset.id, asset]))
+  const bleByIdentifier = new Map(
+    (bleTagsData ?? []).map((tag) => [(tag?.identifier || "").trim(), tag])
+  )
+
+  return (rows ?? []).map((row) => {
+    const asset = row?.asset_id ? assetsById.get(row.asset_id) : null
+    const bleMacAddress = (asset?.ble_identifier || "").trim()
+    const bleTag = bleMacAddress ? bleByIdentifier.get(bleMacAddress) : null
+
+    return {
+      ...row,
+      ambulanceNumber: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown ambulance",
+      ambulanceName: row?.vehicles?.station_name ?? "",
+      vehicleLabel: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown ambulance",
+      assetName: asset?.label || row?.asset_id || "Unknown asset",
+      assetType: asset?.type || "",
+      bleName: bleTag?.tag_model || "",
+      bleMacAddress,
+      title: row?.reason ?? "Alert",
+      description: row?.reason ?? "",
+    }
+  })
+}
+
+const fetchAlerts = async (queryBuilder) => {
+  let query = supabase.from("alerts").select(ALERT_SELECT)
+  query = queryBuilder(query)
+
+  const { data, error } = await query
+
+  if (error) throw error
+
+  return buildAlertDetails(data ?? [])
+}
 
 export const isDeviceAuditAlert = (alert) =>
   (alert?.reason || "").startsWith(DEVICE_AUDIT_PREFIX)
@@ -36,38 +96,21 @@ const fetchCount = async (table, buildQuery = (query) => query) => {
 }
 
 export const fetchOpenAlerts = async () => {
-  const { data, error } = await supabase
-    .from("alerts")
-    .select(ALERT_SELECT)
-    .eq("status", "OPEN")
-    .order("opened_at", { ascending: false })
-
-  if (error) throw error
-
-  return (data ?? []).map(normalizeAlert)
+  return fetchAlerts((query) =>
+    query.eq("status", "OPEN").order("opened_at", { ascending: false })
+  )
 }
 
 export const fetchRecentAlerts = async (limit = 4) => {
-  const { data, error } = await supabase
-    .from("alerts")
-    .select(ALERT_SELECT)
-    .order("opened_at", { ascending: false })
-    .limit(limit)
-
-  if (error) throw error
-
-  return (data ?? []).map(normalizeAlert)
+  return fetchAlerts((query) =>
+    query.order("opened_at", { ascending: false }).limit(limit)
+  )
 }
 
 export const fetchAlertHistory = async () => {
-  const { data, error } = await supabase
-    .from("alerts")
-    .select(ALERT_SELECT)
-    .order("opened_at", { ascending: false })
-
-  if (error) throw error
-
-  return (data ?? []).map(normalizeAlert)
+  return fetchAlerts((query) =>
+    query.order("opened_at", { ascending: false })
+  )
 }
 
 export const fetchDashboardCounts = async () => {
@@ -112,7 +155,7 @@ export const updateAlertStatus = async (id, status) => {
 
   if (error) throw error
 
-  return data ? normalizeAlert(data) : null
+  return data ? (await buildAlertDetails([data]))[0] : null
 }
 
 export const createAlert = async (alert) => {
@@ -132,7 +175,7 @@ export const createAlert = async (alert) => {
 
   if (error) throw error
 
-  return data ? normalizeAlert(data) : null
+  return data ? (await buildAlertDetails([data]))[0] : null
 }
 
 export const addAlert = async (alert) => createAlert(alert)
