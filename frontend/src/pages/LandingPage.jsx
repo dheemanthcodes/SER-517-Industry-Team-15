@@ -22,6 +22,17 @@ const formatDateTime = (value) => {
   return date.toLocaleString()
 }
 
+const formatAlertTitle = (alert) => {
+  const reason = alert?.reason || "Open alert"
+  const assetName = alert?.assetName
+
+  if (!assetName || assetName === "Unknown asset") {
+    return reason
+  }
+
+  return reason.replace(/\basset\b/i, assetName)
+}
+
 function LandingPage() {
   const [counts, setCounts] = useState(initialCounts)
   const [openAlerts, setOpenAlerts] = useState([])
@@ -158,7 +169,7 @@ function LandingPage() {
             ) : openAlertsToShow.length > 0 ? (
               openAlertsToShow.map((alert) => (
                 <div key={alert.id} className="dashboard-list-item">
-                  <strong>{alert.reason || "Open alert"}</strong>
+                  <strong>{formatAlertTitle(alert)}</strong>
                   <span>
                     {alert.vehicleLabel || alert.vehicle_id || "Unknown vehicle"}
                   </span>

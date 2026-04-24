@@ -14,9 +14,48 @@ const ALERT_SELECT = `id,
 
 const DEVICE_AUDIT_PREFIX = "Device "
 
+const isMissingAssetAlert = (row) =>
+  /\basset\b/i.test(row?.reason || "") && /\bmissing\b/i.test(row?.reason || "")
+
 const buildAlertDetails = async (rows) => {
+  const alertRows = rows ?? []
+  const directAssetIds = Array.from(
+    new Set(alertRows.map((row) => row?.asset_id).filter(Boolean))
+  )
+  const missingAlertVehicleIds = Array.from(
+    new Set(
+      alertRows
+        .filter((row) => isMissingAssetAlert(row) && row?.vehicle_id)
+        .map((row) => row.vehicle_id)
+    )
+  )
+
+  const { data: missingEventsData, error: missingEventsError } =
+    missingAlertVehicleIds.length
+      ? await supabase
+          .from("presence_events")
+          .select("asset_id, vehicle_id, observed_at")
+          .eq("state", "MISSING")
+          .in("vehicle_id", missingAlertVehicleIds)
+          .order("observed_at", { ascending: false })
+      : { data: [], error: null }
+
+  if (missingEventsError) throw missingEventsError
+
+  const latestMissingEventByVehicleId = new Map()
+  for (const event of missingEventsData ?? []) {
+    if (!event?.vehicle_id || latestMissingEventByVehicleId.has(event.vehicle_id)) {
+      continue
+    }
+
+    latestMissingEventByVehicleId.set(event.vehicle_id, event)
+  }
+
   const assetIds = Array.from(
-    new Set((rows ?? []).map((row) => row?.asset_id).filter(Boolean))
+    new Set([
+      ...directAssetIds,
+      ...(missingEventsData ?? []).map((event) => event?.asset_id).filter(Boolean),
+    ])
   )
 
   const { data: assetsData, error: assetsError } = assetIds.length
@@ -51,7 +90,13 @@ const buildAlertDetails = async (rows) => {
   )
 
   return (rows ?? []).map((row) => {
-    const asset = row?.asset_id ? assetsById.get(row.asset_id) : null
+    const fallbackMissingEvent = isMissingAssetAlert(row)
+      ? latestMissingEventByVehicleId.get(row?.vehicle_id)
+      : null
+    const effectiveAssetId = assetsById.has(row?.asset_id)
+      ? row.asset_id
+      : fallbackMissingEvent?.asset_id
+    const asset = effectiveAssetId ? assetsById.get(effectiveAssetId) : null
     const bleMacAddress = (asset?.ble_identifier || "").trim()
     const bleTag = bleMacAddress ? bleByIdentifier.get(bleMacAddress) : null
 
@@ -60,7 +105,7 @@ const buildAlertDetails = async (rows) => {
       ambulanceNumber: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown ambulance",
       ambulanceName: row?.vehicles?.station_name ?? "",
       vehicleLabel: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown ambulance",
-      assetName: asset?.label || row?.asset_id || "Unknown asset",
+      assetName: asset?.label || effectiveAssetId || row?.asset_id || "Unknown asset",
       assetType: asset?.type || "",
       bleName: bleTag?.tag_model || "",
       bleMacAddress,
