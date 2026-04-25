@@ -205,6 +205,7 @@ function DeviceManagement({ isActive = true }) {
             }
         }
 
+        setFatalError(true)
         throw lastError
     }
 
@@ -599,7 +600,10 @@ function DeviceManagement({ isActive = true }) {
             })
 
             const json = await res.json()
-            if (!res.ok) throw new Error(json.detail || json.message || 'Update failed')
+            if (!res.ok) {
+                if (res.status >= 500) setFatalError(true)
+                throw new Error(json.detail || json.message || 'Update failed')
+            }
 
             await fetchVehicles()
             await fetchPiDetails()
@@ -625,6 +629,7 @@ function DeviceManagement({ isActive = true }) {
             const json = await res.json()
 
             if (!res.ok) {
+                if (res.status >= 500) setFatalError(true)
                 throw new Error(json.detail || json.message || 'Delete failed')
             }
 
@@ -716,7 +721,10 @@ function DeviceManagement({ isActive = true }) {
                 body: JSON.stringify(payload)
             })
             const json = await res.json()
-            if (!res.ok) throw new Error(json.detail || json.message || 'Registration failed')
+            if (!res.ok) {
+                if (res.status >= 500) setFatalError(true)
+                throw new Error(json.detail || json.message || 'Registration failed')
+            }
 
             const createdVehicleId =
                 typeof json?.data === 'object' && json?.data?.id ? json.data.id : json?.data
