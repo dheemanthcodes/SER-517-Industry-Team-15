@@ -103,15 +103,14 @@ function RaspberryPiConfig() {
         if (!normalizedName) return setAddPiMessage('Name is required.')
         if (!normalizedIp) return setAddPiMessage('IP Address is required.')
 
-        const latestPis = await fetchPiDetails()
-        const duplicateName = latestPis.some(
+        const duplicateName = pis.some(
             (pi) => (pi?.piKey || '').trim().toLowerCase() === normalizedName.toLowerCase()
         )
         if (duplicateName) {
             return setAddPiMessage('A Raspberry Pi with this name already exists.')
         }
 
-        const duplicateIp = latestPis.some(
+        const duplicateIp = pis.some(
             (pi) => (pi?.ipAddress || '').trim() === normalizedIp
         )
         if (duplicateIp) {
@@ -212,16 +211,25 @@ function RaspberryPiConfig() {
         }
     }
 
-    const filteredPis = pis.filter((pi) => {
+    const duplicateNameWarning = newPiName.trim() && pis.some(pi => (pi?.piKey || '').trim().toLowerCase() === newPiName.trim().toLowerCase());
+    const duplicateIpWarning = newPiIp.trim() && pis.some(pi => (pi?.ipAddress || '').trim() === newPiIp.trim());
+
+    const filteredPis = pis.reduce((acc, pi) => {
         const term = searchTerm.toLowerCase()
-        return (
-            pi.piKey.toLowerCase().includes(term) ||
-            (pi.ipAddress || '').toLowerCase().includes(term) ||
-            pi.devices.some((device) =>
-                `${device?.name || ''} ${device?.address || ''}`.toLowerCase().includes(term)
-            )
+        const piMatches = pi.piKey.toLowerCase().includes(term) || (pi.ipAddress || '').toLowerCase().includes(term)
+        
+        const matchedDevices = pi.devices.filter(device => 
+            `${device?.name || ''} ${device?.address || ''}`.toLowerCase().includes(term)
         )
-    })
+
+        if (piMatches || matchedDevices.length > 0) {
+            acc.push({
+                ...pi,
+                displayDevices: piMatches ? pi.devices : matchedDevices,
+            })
+        }
+        return acc
+    }, [])
 
     useEffect(() => {
         if (selectedPi) {
@@ -399,22 +407,34 @@ function RaspberryPiConfig() {
                 <div className="pi-list-view">
                     <div className="add-pi-box" style={{ marginTop: 0, marginBottom: '32px' }}>
                         <h3 className="section-title" style={{ fontSize: '16px' }}>Add Raspberry Pi</h3>
-                        <div className="add-pi-form">
-                            <input
-                                className="mac-input"
-                                placeholder="Name (e.g. pi-3)"
-                                value={newPiName}
-                                onChange={(e) => setNewPiName(e.target.value)}
-                            />
-                            <input
-                                className="mac-input"
-                                placeholder="IP Address (e.g. 192.168.1.100)"
-                                value={newPiIp}
-                                onChange={(e) => setNewPiIp(e.target.value)}
-                            />
-                            <button onClick={handleAddPi} className="btn-secondary">
-                                Add Device
-                            </button>
+                        <div className="add-pi-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <input
+                                    className={`mac-input ${duplicateNameWarning ? 'ble-input-invalid' : ''}`}
+                                    placeholder="Name (e.g. pi-3)"
+                                    value={newPiName}
+                                    onChange={(e) => setNewPiName(e.target.value)}
+                                />
+                                <input
+                                    className={`mac-input ${duplicateIpWarning ? 'ble-input-invalid' : ''}`}
+                                    placeholder="IP Address (e.g. 192.168.1.100)"
+                                    value={newPiIp}
+                                    onChange={(e) => setNewPiIp(e.target.value)}
+                                />
+                                <button 
+                                    onClick={handleAddPi} 
+                                    className="btn-secondary" 
+                                    disabled={Boolean(duplicateNameWarning || duplicateIpWarning)}
+                                >
+                                    Add Device
+                                </button>
+                            </div>
+                            {(duplicateNameWarning || duplicateIpWarning) && (
+                                <div style={{ color: '#ef4444', fontSize: '14px', marginTop: '4px' }}>
+                                    {duplicateNameWarning && <div>A Raspberry Pi with this name already exists.</div>}
+                                    {duplicateIpWarning && <div>A Raspberry Pi with this IP address already exists.</div>}
+                                </div>
+                            )}
                         </div>
                         {addPiMessage && (
                             <p className="status-message" style={{ marginTop: '12px' }}>{addPiMessage}</p>
@@ -450,7 +470,7 @@ function RaspberryPiConfig() {
                                             <span className="detail-label">Pi Name:</span>
                                             <span className="detail-value pi-name-heading">{pi.piKey}</span>
                                         </div>
-                                        <span className="device-count-badge">{pi.devices.length} devices</span>
+                                        <span className="device-count-badge">{pi.displayDevices.length} devices</span>
                                     </div>
 
                                     {expandedPis.has(pi.piKey) && (
@@ -466,15 +486,15 @@ function RaspberryPiConfig() {
                                                 </div>
                                                 <div className="detail-row">
                                                     <span className="detail-label">Connected BLE Devices:</span>
-                                                    <span className="detail-value">{pi.devices.length} tracked</span>
+                                                    <span className="detail-value">{pi.displayDevices.length} tracked</span>
                                                 </div>
                                             </div>
 
-                                            {pi.devices.length > 0 && (
+                                            {pi.displayDevices.length > 0 && (
                                                 <div className="pi-device-list">
                                                     <h4 className="pi-device-list-title">BLE Devices Connected to This Pi</h4>
                                                     <ul className="device-list">
-                                                        {pi.devices.map((device, idx) => (
+                                                        {pi.displayDevices.map((device, idx) => (
                                                             <li key={device.address || idx} className="device-row compact-row">
                                                                 <div className="device-info">
                                                                     <strong>{device.name || 'Unknown'}</strong>

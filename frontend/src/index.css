@@ -1695,7 +1695,7 @@ form+.sbui-divider {
 .vehicle-ambulance-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px 16px;
+    gap: 20px 24px;
 }
 
 .vehicle-field-label {

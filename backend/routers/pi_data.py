@@ -15,8 +15,6 @@ except ImportError:
 
 router = APIRouter(tags=["Pi Data"])
 
-latest_pi_payload: Optional[Dict[str, Any]] = None
-
 
 class PiDetailsPayload(BaseModel):
     name: str
@@ -93,7 +91,7 @@ def _load_ble_mappings_for_pi(device_id: str):
 @router.post(
     "/api/pi/data",
     summary="Receive Raspberry Pi JSON data",
-    description="Accepts any non-empty JSON object sent by a Raspberry Pi and stores the latest payload in memory.",
+    description="Accepts any non-empty JSON object sent by a Raspberry Pi. Processes directly to database without memory cache.",
 )
 def receive_pi_data(
     payload: Dict[str, Any] = Body(
@@ -106,22 +104,18 @@ def receive_pi_data(
         },
     )
 ):
-    global latest_pi_payload
-
     if not payload:
         raise HTTPException(status_code=400, detail="Request JSON body cannot be empty")
 
     processing_summary = process_pi_batch(payload)
 
-    latest_pi_payload = {
-        "payload": payload,
-        "received_at": utc_now().isoformat(),
-        "processing_summary": processing_summary,
-    }
     return {
         "status": "success",
-        "message": "Raspberry Pi data received successfully",
-        "data": latest_pi_payload,
+        "message": "Raspberry Pi data received and processed directly",
+        "data": {
+            "received_at": utc_now().isoformat(),
+            "processing_summary": processing_summary,
+        },
     }
 
 
@@ -172,13 +166,21 @@ def receive_pi_heartbeat(payload: PiHeartbeatPayload):
 
 @router.get(
     "/api/pi/data/latest",
-    summary="Get latest Raspberry Pi payload",
-    description="Returns the most recent JSON payload received from a Raspberry Pi.",
+    summary="Get latest asset status from database",
+    description="Returns the most recent asset status from the database directly.",
 )
 def get_latest_pi_data():
-    if latest_pi_payload is None:
-        raise HTTPException(status_code=404, detail="No Raspberry Pi data has been received yet")
-    return {"status": "success", "data": latest_pi_payload}
+    try:
+        response = supabase.table("asset_status").select("*").order("updated_at", desc=True).limit(50).execute()
+        data = response.data or []
+        if not data:
+            raise HTTPException(status_code=404, detail="No asset status records found in database.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return {"status": "success", "data": data}
 
 
 @router.post("/api/addpidetails", summary="Add or update Raspberry Pi details")
