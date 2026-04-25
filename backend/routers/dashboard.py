@@ -576,6 +576,8 @@ def update_ambulance(payload: dict):
             print(f"[WARN] Failed to log audit alert: {alert_err}")
 
         return {"status": "success", "message": "Ambulance updated successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

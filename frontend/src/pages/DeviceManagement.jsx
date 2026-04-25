@@ -178,6 +178,7 @@ function DeviceManagement({ isActive = true }) {
     const [editingVehicleData, setEditingVehicleData] = useState(null)
     const [editingError, setEditingError] = useState('')
     const [piStatusMessage, setPiStatusMessage] = useState('')
+    const [fatalError, setFatalError] = useState(false)
 
     const fetchJsonWithRetry = async (url, options = {}, retries = 1) => {
         let lastError
@@ -350,6 +351,7 @@ function DeviceManagement({ isActive = true }) {
             } catch (fallbackError) {
                 console.error('Error fetching vehicles from Supabase:', fallbackError)
                 setError('Failed to load vehicles. Please try again.')
+                setFatalError(true)
             }
         } finally {
             setFetchLoading(false)
@@ -370,6 +372,7 @@ function DeviceManagement({ isActive = true }) {
             setPiLoadError('Failed to load Raspberry Pi options.')
             setAllPis([])
             setAvailablePis([])
+            setFatalError(true)
         } finally {
             setPiLoading(false)
         }
@@ -461,6 +464,13 @@ function DeviceManagement({ isActive = true }) {
     const handleAssetBleChange = (assetId, value) => {
         setEditingVehicleData((prev) => {
             if (!prev) return prev
+
+            const selectedPiName = prev.raspberry_pi?.name
+            const selectedPi = allPis.find((pi) => pi.piKey === selectedPiName)
+            const devices = Array.isArray(selectedPi?.devices) ? selectedPi.devices : []
+            const selectedDevice = devices.find((d) => d.address === value)
+            const tagModel = selectedDevice?.name || ''
+
             return {
                 ...prev,
                 assets: (prev.assets || []).map((asset) =>
@@ -469,7 +479,8 @@ function DeviceManagement({ isActive = true }) {
                             ...asset,
                             ble_tag: {
                                 ...(asset.ble_tag || {}),
-                                identifier: value
+                                identifier: value,
+                                tag_model: tagModel
                             }
                         }
                         : asset
@@ -717,6 +728,33 @@ function DeviceManagement({ isActive = true }) {
             console.error('Error registering ambulance:', error)
             throw error
         }
+    }
+
+    if (fatalError) {
+        return (
+            <div className="fatal-error-overlay" style={{
+                position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+                backgroundColor: 'rgba(0, 0, 0, 0.8)', zIndex: 9999,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                color: 'white', padding: '20px', textAlign: 'center'
+            }}>
+                <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
+                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '10px' }}>Something went wrong</h2>
+                <p style={{ fontSize: '16px', marginBottom: '24px', maxWidth: '400px' }}>
+                    We encountered a critical error communicating with the server. Please refresh the page to try again.
+                </p>
+                <button 
+                    onClick={() => window.location.reload()}
+                    style={{
+                        padding: '12px 24px', backgroundColor: '#dc2626', color: 'white',
+                        border: 'none', borderRadius: '6px', fontSize: '16px', cursor: 'pointer',
+                        fontWeight: '600'
+                    }}
+                >
+                    Refresh Page
+                </button>
+            </div>
+        )
     }
 
     return (
