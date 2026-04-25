@@ -41,14 +41,22 @@ function EventHistory() {
     }
 
     const formatAssetId = (alert) => {
+        const assetLabel = String(alert.assetName || '').trim()
         const bleName = String(alert.bleName || '').trim()
         const bleMacAddress = String(alert.bleMacAddress || '').trim()
 
+        let bleDetails = ''
         if (bleName && bleMacAddress) {
-            return `${bleName} (${bleMacAddress})`
+            bleDetails = `${bleName} (${bleMacAddress})`
+        } else if (bleName || bleMacAddress) {
+            bleDetails = bleName || bleMacAddress
         }
 
-        return bleName || bleMacAddress || alert.asset_id || ''
+        if (assetLabel && bleDetails && assetLabel !== bleDetails) {
+            return `${assetLabel} - ${bleDetails}`
+        }
+
+        return assetLabel || bleDetails || alert.asset_id || ''
     }
 
     const mapAlertToEvent = (alert) => {

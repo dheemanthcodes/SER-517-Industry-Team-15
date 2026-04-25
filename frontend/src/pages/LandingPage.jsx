@@ -33,6 +33,25 @@ const formatAlertTitle = (alert) => {
   return reason.replace(/\basset\b/i, assetName)
 }
 
+const formatAssetDetails = (alert) => {
+  const assetLabel = String(alert?.assetName || '').trim()
+  const bleName = String(alert?.bleName || '').trim()
+  const bleMacAddress = String(alert?.bleMacAddress || '').trim()
+
+  let bleDetails = ''
+  if (bleName && bleMacAddress) {
+      bleDetails = `${bleName} (${bleMacAddress})`
+  } else if (bleName || bleMacAddress) {
+      bleDetails = bleName || bleMacAddress
+  }
+
+  if (assetLabel && bleDetails && assetLabel !== bleDetails) {
+      return `${assetLabel} - ${bleDetails}`
+  }
+
+  return assetLabel || bleDetails || alert?.asset_id || ''
+}
+
 function LandingPage() {
   const [counts, setCounts] = useState(initialCounts)
   const [openAlerts, setOpenAlerts] = useState([])
@@ -172,6 +191,7 @@ function LandingPage() {
                   <strong>{formatAlertTitle(alert)}</strong>
                   <span>
                     {alert.vehicleLabel || alert.vehicle_id || "Unknown vehicle"}
+                    {formatAssetDetails(alert) ? ` • ${formatAssetDetails(alert)}` : ''}
                   </span>
                 </div>
               ))
@@ -196,6 +216,7 @@ function LandingPage() {
                   <strong>{activity.reason || "Alert activity"}</strong>
                   <span>
                     {activity.vehicleLabel || activity.vehicle_id || "Unknown vehicle"}
+                    {formatAssetDetails(activity) ? ` • ${formatAssetDetails(activity)}` : ''}
                     {" • "}
                     {formatDateTime(activity.opened_at)}
                   </span>
