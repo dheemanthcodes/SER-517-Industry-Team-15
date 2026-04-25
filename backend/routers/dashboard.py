@@ -232,7 +232,7 @@ def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
         }
 
         if existing_asset:
-            supabase.table("assets").update(
+            res = supabase.table("assets").update(
                 {
                     "vehicle_id": asset_row["vehicle_id"],
                     "label": asset_row["label"],
@@ -241,6 +241,8 @@ def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
                     "is_active": True,
                 }
             ).eq("id", asset_id).execute()
+            if getattr(res, "error", None) or not getattr(res, "data", []):
+                raise Exception(f"Failed to update existing box asset {asset_id}. Supabase returned: {res}")
         else:
             supabase.table("assets").insert(asset_row).execute()
 
@@ -263,7 +265,7 @@ def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
         }
 
         if existing_asset:
-            supabase.table("assets").update(
+            res = supabase.table("assets").update(
                 {
                     "vehicle_id": asset_row["vehicle_id"],
                     "label": asset_row["label"],
@@ -272,6 +274,8 @@ def _sync_vehicle_assets(vehicle_id: str, normalized_assets):
                     "is_active": True,
                 }
             ).eq("id", asset_id).execute()
+            if getattr(res, "error", None) or not getattr(res, "data", []):
+                raise Exception(f"Failed to update existing pouch asset {asset_id}. Supabase returned: {res}")
         else:
             supabase.table("assets").insert(asset_row).execute()
 

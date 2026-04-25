@@ -815,8 +815,8 @@ function DeviceManagement({ isActive = true }) {
                                     : vehicle
 
                             const assets = currentVehicle.assets || []
-                            const drugBoxes = assets.filter((a) => a.type === 'BOX') || []
-                            const pouches = assets.filter((a) => a.type === 'POUCH') || []
+                            const drugBoxes = [...assets.filter((a) => a.type === 'BOX')].sort((a, b) => a.id.localeCompare(b.id))
+                            const pouches = [...assets.filter((a) => a.type === 'POUCH')].sort((a, b) => a.id.localeCompare(b.id))
                             const currentBoxCount = drugBoxes.length === 2 ? '2' : '1'
 
                             const originalAssignedPi = vehicle.raspberry_pi?.name
