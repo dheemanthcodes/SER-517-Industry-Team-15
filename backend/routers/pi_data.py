@@ -123,7 +123,6 @@ def receive_pi_data(
 def receive_pi_heartbeat(payload: PiHeartbeatPayload):
     normalized_pi_id = (payload.pi_id or "").strip()
     normalized_pi_name = (payload.pi_name or "").strip()
-    normalized_ip_address = (payload.ip_address or "").strip()
 
     if not normalized_pi_id and not normalized_pi_name:
         raise HTTPException(status_code=400, detail="'pi_id' or 'pi_name' is required")
@@ -134,8 +133,6 @@ def receive_pi_heartbeat(payload: PiHeartbeatPayload):
             raise HTTPException(status_code=404, detail="Raspberry Pi was not found")
 
         updates = {"is_active": True}
-        if normalized_ip_address:
-            updates["ip_address"] = normalized_ip_address
 
         supabase.table("devices").update(updates).eq("id", device["id"]).execute()
 
