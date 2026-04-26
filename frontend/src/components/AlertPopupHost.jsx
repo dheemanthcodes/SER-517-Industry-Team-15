@@ -4,6 +4,7 @@ import AlertPopup from "./AlertPopup"
 import { fetchOpenAlerts, isPopupEligibleAlert } from "../utils/alertStore"
 
 const PREVIEW_ALERT_ID = "preview-alert-popup"
+const ALERT_REFRESH_INTERVAL_MS = 5000
 
 const getPreviewAlertFromQuery = () => {
   if (typeof window === "undefined") return null
@@ -49,18 +50,50 @@ function AlertPopupHost() {
   useEffect(() => {
     loadOpenAlerts()
 
+    let refreshTimeout = null
+    const scheduleRefresh = () => {
+      if (refreshTimeout) {
+        window.clearTimeout(refreshTimeout)
+      }
+
+      refreshTimeout = window.setTimeout(() => {
+        loadOpenAlerts()
+      }, 150)
+    }
+
     const channel = supabase
       .channel("global-alert-popup-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "alerts" },
-        () => {
+        scheduleRefresh
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
           loadOpenAlerts()
         }
-      )
-      .subscribe()
+      })
+
+    const intervalId = window.setInterval(() => {
+      loadOpenAlerts()
+    }, ALERT_REFRESH_INTERVAL_MS)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadOpenAlerts()
+      }
+    }
+
+    window.addEventListener("focus", loadOpenAlerts)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
+      if (refreshTimeout) {
+        window.clearTimeout(refreshTimeout)
+      }
+      window.clearInterval(intervalId)
+      window.removeEventListener("focus", loadOpenAlerts)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       supabase.removeChannel(channel)
     }
   }, [loadOpenAlerts])
