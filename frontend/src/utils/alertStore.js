@@ -105,6 +105,7 @@ const buildAlertDetails = async (rows) => {
       ambulanceNumber: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown ambulance",
       ambulanceName: row?.vehicles?.station_name ?? "",
       vehicleLabel: row?.vehicles?.unit_number ?? row?.vehicle_id ?? "Unknown ambulance",
+      effectiveAssetId,
       assetName: asset?.label || effectiveAssetId || row?.asset_id || "Unknown asset",
       assetType: asset?.type || "",
       bleName: bleTag?.tag_model || "",

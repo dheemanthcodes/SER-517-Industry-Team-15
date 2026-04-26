@@ -56,7 +56,7 @@ function EventHistory() {
             return `${assetLabel} - ${bleDetails}`
         }
 
-        return assetLabel || bleDetails || alert.asset_id || ''
+        return assetLabel || bleDetails || alert.effectiveAssetId || alert.asset_id || ''
     }
 
     const mapAlertToEvent = (alert) => {
@@ -64,7 +64,7 @@ function EventHistory() {
 
         return {
             id: alert.id,
-            asset_id: alert.asset_id,
+            asset_id: alert.effectiveAssetId || alert.asset_id,
             assetDisplay: formatAssetId(alert),
             vehicle: alert.vehicleLabel || alert.asset_id || 'Unknown',
             details: alert.reason || alert.description || 'Alert',
