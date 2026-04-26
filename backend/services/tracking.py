@@ -220,11 +220,21 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     asset_ids = [asset.get("id") for asset in assets if asset.get("id")]
 
     status_rows = []
+    active_alert_rows = []
     if asset_ids:
         status_rows = (
             supabase.table("asset_status")
             .select("asset_id, vehicle_id, state, last_seen_at, last_rssi, updated_at")
             .in_("asset_id", asset_ids)
+            .execute()
+            .data
+            or []
+        )
+        active_alert_rows = (
+            supabase.table("alerts")
+            .select("asset_id, status")
+            .in_("asset_id", asset_ids)
+            .in_("status", ["OPEN", "ACK"])
             .execute()
             .data
             or []
@@ -247,6 +257,9 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         "assets": assets,
         "status_by_asset_id": {
             row.get("asset_id"): row for row in status_rows if row.get("asset_id")
+        },
+        "active_alert_by_asset_id": {
+            row.get("asset_id"): row for row in active_alert_rows if row.get("asset_id")
         },
         "missing_timeout_seconds": int(
             (config_row or {}).get("missing_timeout_seconds")
@@ -344,6 +357,7 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     status_by_asset_id = context.get("status_by_asset_id") or {}
+    active_alert_by_asset_id = context.get("active_alert_by_asset_id") or {}
     missing_timeout_seconds = context.get("missing_timeout_seconds") or DEFAULT_MISSING_TIMEOUT_SECONDS
     seeded_status_rows = []
 
@@ -408,7 +422,12 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
         if next_state == "MISSING":
             missing_assets += 1
 
-        should_insert_event = bool(observation) or previous_state != next_state
+        has_active_alert = bool(active_alert_by_asset_id.get(asset_id))
+        is_duplicate_missing_alert_event = next_state == "MISSING" and has_active_alert
+        should_insert_event = (
+            (bool(observation) or previous_state != next_state)
+            and not is_duplicate_missing_alert_event
+        )
         if should_insert_event:
             insert_presence_event_row(
                 asset_id=asset_id,
