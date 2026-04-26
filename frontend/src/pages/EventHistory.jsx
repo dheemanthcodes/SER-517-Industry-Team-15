@@ -6,6 +6,12 @@ import {
     updateAlertStatus,
 } from '../utils/alertStore'
 
+const EVENT_STATUS_OPTIONS = [
+    { value: 'open', label: 'Open' },
+    { value: 'in-progress', label: 'In Progress' },
+    { value: 'resolved', label: 'Resolved' },
+]
+
 function EventHistory() {
     const [selectedStatus, setSelectedStatus] = useState('all')
     const [searchTerm, setSearchTerm] = useState('')
@@ -186,9 +192,11 @@ function EventHistory() {
                     onChange={(e) => setSelectedStatus(e.target.value)}
                 >
                     <option value="all">All Status</option>
-                    <option value="open">Open</option>
-                    <option value="in-progress">In progress</option>
-                    <option value="resolved">Resolved</option>
+                    {EVENT_STATUS_OPTIONS.map((status) => (
+                        <option key={status.value} value={status.value}>
+                            {status.label}
+                        </option>
+                    ))}
                 </select>
             </div>
 
@@ -220,9 +228,11 @@ function EventHistory() {
                                     disabled={savingId === event.id || event.status === 'resolved'}
                                     onChange={(e) => handleStatusChange(event.id, e.target.value)}
                                 >
-                                    <option value="open">open</option>
-                                    <option value="in-progress">in progress</option>
-                                    <option value="resolved">resolved</option>
+                                    {EVENT_STATUS_OPTIONS.map((status) => (
+                                        <option key={status.value} value={status.value}>
+                                            {status.label}
+                                        </option>
+                                    ))}
                                 </select>
                             ) : (
                                 <span></span>

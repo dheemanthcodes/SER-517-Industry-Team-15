@@ -41,6 +41,10 @@ def _normalize_ble_identifier(value: str) -> str:
     return str(value or "").strip().replace("-", ":").upper()
 
 
+def _normalize_ble_tag_name(value: str) -> str:
+    return str(value or "").strip().casefold()
+
+
 def _is_valid_mac_address(value: str) -> bool:
     import re
 
@@ -320,6 +324,7 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
             raise HTTPException(status_code=404, detail="Selected Raspberry Pi was not found")
 
         existing_tag = None
+        normalized_name = _normalize_ble_tag_name(name)
 
         if ble_tag_id:
             existing = (
@@ -340,6 +345,35 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
                     detail="BLE tag record does not belong to the selected Raspberry Pi",
                 )
 
+        name_matches = [
+            row
+            for row in (
+                supabase.table("ble_tags")
+                .select("id, asset_id, identifier, tag_model")
+                .execute()
+                .data
+                or []
+            )
+            if _normalize_ble_tag_name(row.get("tag_model")) == normalized_name
+        ]
+
+        if ble_tag_id:
+            if any(row.get("id") != ble_tag_id for row in name_matches):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This BLE tag name is already assigned to another BLE tag.",
+                )
+        elif name_matches:
+            same_pi_matches = [
+                row for row in name_matches if row.get("asset_id") == device.get("id")
+            ]
+            if len(name_matches) != 1 or not same_pi_matches:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This BLE tag name is already assigned to another BLE tag.",
+                )
+            existing_tag = same_pi_matches[0]
+
         conflicting = (
             supabase.table("ble_tags")
             .select("id, asset_id, identifier")
@@ -357,19 +391,6 @@ def upsert_ble_tag(payload: BleTagUpsertPayload):
                 status_code=409,
                 detail="This MAC address is already assigned to another asset.",
             )
-
-        if not existing_tag:
-            existing = (
-                supabase.table("ble_tags")
-                .select("id, asset_id, identifier, tag_model")
-                .eq("asset_id", device.get("id"))
-                .eq("tag_model", name)
-                .limit(1)
-                .execute()
-                .data
-                or []
-            )
-            existing_tag = existing[0] if existing else None
 
         if existing_tag:
             supabase.table("ble_tags").update(

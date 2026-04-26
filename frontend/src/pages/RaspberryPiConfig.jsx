@@ -6,6 +6,7 @@ import { normalizePiSnapshot } from '../utils/piSnapshot'
 const BLE_SLOT_COUNT = 4
 
 const normalizeMacAddress = (value) => String(value || '').trim().replace(/-/g, ':').toUpperCase()
+const normalizeBleName = (value) => String(value || '').trim().toLowerCase()
 
 const isValidMacAddress = (value) => {
     const normalized = normalizeMacAddress(value)
@@ -277,6 +278,35 @@ function RaspberryPiConfig() {
         return ''
     }
 
+    const getBleNameUniquenessError = (slots, currentIndex) => {
+        const currentName = normalizeBleName(slots?.[currentIndex]?.name)
+        if (!currentName) return ''
+
+        const currentId = String(slots?.[currentIndex]?.id || '').trim()
+
+        for (let i = 0; i < (slots || []).length; i++) {
+            if (i === currentIndex) continue
+            const otherName = normalizeBleName(slots?.[i]?.name)
+            if (otherName && otherName === currentName) {
+                return 'BLE name is already used by another tag.'
+            }
+        }
+
+        for (const pi of pis || []) {
+            for (const device of pi?.devices || []) {
+                const otherName = normalizeBleName(device?.name)
+                if (!otherName || otherName !== currentName) continue
+
+                const otherId = String(device?.id || '').trim()
+                if (currentId && otherId && otherId === currentId) continue
+
+                return 'BLE name is already used by another tag.'
+            }
+        }
+
+        return ''
+    }
+
     const handleSaveSlot = async (index) => {
         if (savingSlotIndex === index) return
 
@@ -291,6 +321,12 @@ function RaspberryPiConfig() {
 
         if (!isValidMacAddress(mac)) {
             setMessage('Enter a valid MAC address (AA:BB:CC:DD:EE:FF).')
+            return
+        }
+
+        const duplicateNameError = getBleNameUniquenessError(bleSlots, index)
+        if (duplicateNameError) {
+            setMessage(duplicateNameError)
             return
         }
 
@@ -563,6 +599,8 @@ function RaspberryPiConfig() {
                                     {bleSlots.map((slot, index) => {
                                         const isEditing = editingSlots.has(index) || !areSlotsComplete(slot)
                                         const isMacValid = !slot.mac || isValidMacAddress(slot.mac)
+                                        const duplicateNameError = getBleNameUniquenessError(bleSlots, index)
+                                        const showDuplicateNameError = Boolean((slot.name || '').trim()) && Boolean(duplicateNameError)
                                         const duplicateError = getMacUniquenessError(bleSlots, index)
                                         const showDuplicateError = Boolean(slot.mac) && Boolean(duplicateError)
 
@@ -572,7 +610,7 @@ function RaspberryPiConfig() {
                                                 {isEditing ? (
                                                     <>
                                                         <input
-                                                            className="ble-name-input"
+                                                            className={`ble-name-input ${showDuplicateNameError ? 'ble-input-invalid' : ''}`}
                                                             placeholder="Device name (e.g. BLE Device 1)"
                                                             value={slot.name}
                                                             onChange={(e) => updateBleSlot(index, { name: e.target.value })}
@@ -590,7 +628,7 @@ function RaspberryPiConfig() {
                                                             <button
                                                                 type="button"
                                                                 className="btn-primary"
-                                                                disabled={savingSlotIndex === index || clearingSlotIndex === index}
+                                                                disabled={savingSlotIndex === index || clearingSlotIndex === index || showDuplicateNameError}
                                                                 onClick={() => handleSaveSlot(index)}
                                                             >
                                                                 {savingSlotIndex === index ? 'Saving...' : 'Add BLE Device'}
@@ -624,8 +662,10 @@ function RaspberryPiConfig() {
                                                     </>
                                                 )}
 
-                                                {showDuplicateError ? (
-                                                    <div className="ble-inline-error">{duplicateError}</div>
+                                                {showDuplicateNameError || showDuplicateError ? (
+                                                    <div className="ble-inline-error">
+                                                        {showDuplicateNameError ? duplicateNameError : duplicateError}
+                                                    </div>
                                                 ) : null}
                                             </div>
                                         )
