@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import {
+    ALERTS_REFRESH_EVENT,
     fetchAlertHistory,
     isDeviceAuditAlert,
     updateAlertStatus,
@@ -111,7 +112,10 @@ function EventHistory() {
             )
             .subscribe()
 
+        window.addEventListener(ALERTS_REFRESH_EVENT, fetchAlerts)
+
         return () => {
+            window.removeEventListener(ALERTS_REFRESH_EVENT, fetchAlerts)
             supabase.removeChannel(subscription)
         }
     }, [fetchAlerts])

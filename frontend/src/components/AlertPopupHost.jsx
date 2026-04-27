@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { supabase } from "../supabaseClient"
 import AlertPopup from "./AlertPopup"
-import { fetchOpenAlerts, isPopupEligibleAlert } from "../utils/alertStore"
+import {
+  ALERTS_REFRESH_EVENT,
+  fetchOpenAlerts,
+  isPopupEligibleAlert,
+} from "../utils/alertStore"
 
 const PREVIEW_ALERT_ID = "preview-alert-popup"
 const ALERT_REFRESH_INTERVAL_MS = 5000
@@ -43,6 +47,7 @@ function AlertPopupHost() {
     try {
       const alerts = await fetchOpenAlerts()
       setOpenAlerts(alerts.filter(isPopupEligibleAlert))
+      window.dispatchEvent(new CustomEvent(ALERTS_REFRESH_EVENT))
     } catch (error) {
       console.error("Error loading popup alerts:", error)
     }
