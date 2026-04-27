@@ -81,10 +81,14 @@ function EventHistory() {
         }
     }
 
-    const fetchAlerts = useCallback(async () => {
+    const fetchAlerts = useCallback(async (options = {}) => {
+        const showLoading = options?.showLoading === true
+
         try {
             setError('')
-            setLoading(true)
+            if (showLoading) {
+                setLoading(true)
+            }
 
             const alerts = await fetchAlertHistory()
             const mappedEvents = alerts.map(mapAlertToEvent)
@@ -94,12 +98,14 @@ function EventHistory() {
             console.error('Error fetching alerts:', err)
             setError('Failed to load event history.')
         } finally {
-            setLoading(false)
+            if (showLoading) {
+                setLoading(false)
+            }
         }
     }, [])
 
     useEffect(() => {
-        fetchAlerts()
+        fetchAlerts({ showLoading: true })
 
         const subscription = supabase
             .channel('alerts_changes')

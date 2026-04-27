@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../supabaseClient"
 import AlertPopup from "./AlertPopup"
 import {
@@ -42,12 +42,19 @@ function AlertPopupHost() {
   const [currentAlert, setCurrentAlert] = useState(null)
   const [dismissedAlertIds, setDismissedAlertIds] = useState([])
   const [previewAlert, setPreviewAlert] = useState(() => getPreviewAlertFromQuery())
+  const openAlertIdsRef = useRef("")
 
   const loadOpenAlerts = useCallback(async () => {
     try {
       const alerts = await fetchOpenAlerts()
-      setOpenAlerts(alerts.filter(isPopupEligibleAlert))
-      window.dispatchEvent(new CustomEvent(ALERTS_REFRESH_EVENT))
+      const popupAlerts = alerts.filter(isPopupEligibleAlert)
+      const openAlertIds = popupAlerts.map((alert) => alert.id).sort().join("|")
+
+      setOpenAlerts(popupAlerts)
+      if (openAlertIdsRef.current !== openAlertIds) {
+        openAlertIdsRef.current = openAlertIds
+        window.dispatchEvent(new CustomEvent(ALERTS_REFRESH_EVENT))
+      }
     } catch (error) {
       console.error("Error loading popup alerts:", error)
     }
