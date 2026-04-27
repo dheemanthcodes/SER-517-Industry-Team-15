@@ -81,6 +81,10 @@ function App() {
             return
         }
 
+        if (path !== '/') {
+            window.history.replaceState({}, '', '/')
+        }
+
         setShowLanding(true)
     }
 
