@@ -14,6 +14,7 @@ const initialCounts = {
 }
 
 const DASHBOARD_REALTIME_TABLES = ["alerts", "vehicles", "assets", "devices"]
+const ALERT_POPUP_ACKNOWLEDGED_EVENT = "alert-popup-acknowledged"
 
 const formatDateTime = (value) => {
   if (!value) return "Just now"
@@ -109,10 +110,13 @@ function LandingPage() {
     channel
       .subscribe()
 
+    window.addEventListener(ALERT_POPUP_ACKNOWLEDGED_EVENT, scheduleRefresh)
+
     return () => {
       if (refreshTimeout) {
         window.clearTimeout(refreshTimeout)
       }
+      window.removeEventListener(ALERT_POPUP_ACKNOWLEDGED_EVENT, scheduleRefresh)
       supabase.removeChannel(channel)
     }
   }, [loadDashboardData])

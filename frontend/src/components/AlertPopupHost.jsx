@@ -5,6 +5,7 @@ import { fetchOpenAlerts, isPopupEligibleAlert } from "../utils/alertStore"
 
 const PREVIEW_ALERT_ID = "preview-alert-popup"
 const ALERT_REFRESH_INTERVAL_MS = 5000
+const ALERT_POPUP_ACKNOWLEDGED_EVENT = "alert-popup-acknowledged"
 
 const getPreviewAlertFromQuery = () => {
   if (typeof window === "undefined") return null
@@ -127,6 +128,12 @@ function AlertPopupHost() {
         setDismissedAlertIds((currentIds) => {
           return currentIds.includes(prev.id) ? currentIds : [...currentIds, prev.id]
         })
+
+        window.dispatchEvent(
+          new CustomEvent(ALERT_POPUP_ACKNOWLEDGED_EVENT, {
+            detail: { alertId: prev.id },
+          })
+        )
       }
 
       if (prev?.id === PREVIEW_ALERT_ID) {
