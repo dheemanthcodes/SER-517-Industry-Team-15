@@ -232,7 +232,7 @@ def load_tracking_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         active_alert_rows = (
             supabase.table("alerts")
-            .select("asset_id, status")
+            .select("id, asset_id, status")
             .in_("asset_id", asset_ids)
             .in_("status", ["OPEN", "ACK"])
             .execute()
@@ -315,6 +315,19 @@ def insert_presence_event_row(
             "received_at": to_iso8601(utc_now()),
         }
     ).execute()
+
+
+def keep_active_alert_open(active_alert: Optional[Dict[str, Any]]) -> None:
+    if not active_alert or not active_alert.get("id"):
+        return
+
+    supabase.table("alerts").update(
+        {
+            "status": active_alert.get("status") or "OPEN",
+            "closed_at": None,
+        }
+    ).eq("id", active_alert.get("id")).execute()
+
 
 def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
     batch_time = extract_payload_observed_at(payload, utc_now())
@@ -422,7 +435,8 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
         if next_state == "MISSING":
             missing_assets += 1
 
-        has_active_alert = bool(active_alert_by_asset_id.get(asset_id))
+        active_alert = active_alert_by_asset_id.get(asset_id)
+        has_active_alert = bool(active_alert)
         is_duplicate_missing_alert_event = next_state == "MISSING" and has_active_alert
         should_insert_event = (
             (bool(observation) or previous_state != next_state)
@@ -437,6 +451,8 @@ def process_pi_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
                 observed_at=event_time,
                 rssi=rssi,
             )
+            if has_active_alert and next_state != "MISSING":
+                keep_active_alert_open(active_alert)
 
         state_rows.append(
             {
