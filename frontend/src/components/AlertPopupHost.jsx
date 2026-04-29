@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../supabaseClient"
 import AlertPopup from "./AlertPopup"
-import { fetchOpenAlerts, isPopupEligibleAlert } from "../utils/alertStore"
+import {
+  ALERTS_REFRESH_EVENT,
+  fetchOpenAlerts,
+  isPopupEligibleAlert,
+} from "../utils/alertStore"
 
 const PREVIEW_ALERT_ID = "preview-alert-popup"
+const ALERT_REFRESH_INTERVAL_MS = 5000
+const ALERT_POPUP_ACKNOWLEDGED_EVENT = "alert-popup-acknowledged"
 
 const getPreviewAlertFromQuery = () => {
   if (typeof window === "undefined") return null
@@ -36,11 +42,19 @@ function AlertPopupHost() {
   const [currentAlert, setCurrentAlert] = useState(null)
   const [dismissedAlertIds, setDismissedAlertIds] = useState([])
   const [previewAlert, setPreviewAlert] = useState(() => getPreviewAlertFromQuery())
+  const openAlertIdsRef = useRef("")
 
   const loadOpenAlerts = useCallback(async () => {
     try {
       const alerts = await fetchOpenAlerts()
-      setOpenAlerts(alerts.filter(isPopupEligibleAlert))
+      const popupAlerts = alerts.filter(isPopupEligibleAlert)
+      const openAlertIds = popupAlerts.map((alert) => alert.id).sort().join("|")
+
+      setOpenAlerts(popupAlerts)
+      if (openAlertIdsRef.current !== openAlertIds) {
+        openAlertIdsRef.current = openAlertIds
+        window.dispatchEvent(new CustomEvent(ALERTS_REFRESH_EVENT))
+      }
     } catch (error) {
       console.error("Error loading popup alerts:", error)
     }
@@ -49,18 +63,50 @@ function AlertPopupHost() {
   useEffect(() => {
     loadOpenAlerts()
 
+    let refreshTimeout = null
+    const scheduleRefresh = () => {
+      if (refreshTimeout) {
+        window.clearTimeout(refreshTimeout)
+      }
+
+      refreshTimeout = window.setTimeout(() => {
+        loadOpenAlerts()
+      }, 150)
+    }
+
     const channel = supabase
       .channel("global-alert-popup-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "alerts" },
-        () => {
+        scheduleRefresh
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
           loadOpenAlerts()
         }
-      )
-      .subscribe()
+      })
+
+    const intervalId = window.setInterval(() => {
+      loadOpenAlerts()
+    }, ALERT_REFRESH_INTERVAL_MS)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadOpenAlerts()
+      }
+    }
+
+    window.addEventListener("focus", loadOpenAlerts)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
+      if (refreshTimeout) {
+        window.clearTimeout(refreshTimeout)
+      }
+      window.clearInterval(intervalId)
+      window.removeEventListener("focus", loadOpenAlerts)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       supabase.removeChannel(channel)
     }
   }, [loadOpenAlerts])
@@ -94,6 +140,12 @@ function AlertPopupHost() {
         setDismissedAlertIds((currentIds) => {
           return currentIds.includes(prev.id) ? currentIds : [...currentIds, prev.id]
         })
+
+        window.dispatchEvent(
+          new CustomEvent(ALERT_POPUP_ACKNOWLEDGED_EVENT, {
+            detail: { alertId: prev.id },
+          })
+        )
       }
 
       if (prev?.id === PREVIEW_ALERT_ID) {

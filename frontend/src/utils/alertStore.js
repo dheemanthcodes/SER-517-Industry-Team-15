@@ -13,6 +13,7 @@ const ALERT_SELECT = `id,
 `
 
 const DEVICE_AUDIT_PREFIX = "Device "
+export const ALERTS_REFRESH_EVENT = "alerts-refresh-requested"
 
 const isMissingAssetAlert = (row) =>
   /\basset\b/i.test(row?.reason || "") && /\bmissing\b/i.test(row?.reason || "")

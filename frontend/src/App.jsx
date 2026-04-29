@@ -46,6 +46,15 @@ function App() {
         return path
     }
 
+    const redirectToPublicHome = () => {
+        if (window.location.pathname !== '/') {
+            window.location.replace('/')
+            return true
+        }
+
+        return false
+    }
+
     const syncViewFromLocation = (currentUser) => {
         const path = window.location.pathname || '/'
 
@@ -81,6 +90,10 @@ function App() {
             return
         }
 
+        if (path !== '/' && redirectToPublicHome()) {
+            return
+        }
+
         setShowLanding(true)
     }
 
@@ -100,6 +113,8 @@ function App() {
                 setUser(session.user)
                 setIsLoggedIn(true)
                 syncViewFromLocation(session.user)
+            } else {
+                syncViewFromLocation(null)
             }
 
             if (window.location.hash) {
@@ -124,6 +139,7 @@ function App() {
                 hadUserRef.current = false
                 setUser(null)
                 setIsLoggedIn(false)
+                syncViewFromLocation(null)
             }
         })
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import {
+    ALERTS_REFRESH_EVENT,
     fetchAlertHistory,
     isDeviceAuditAlert,
     updateAlertStatus,
@@ -80,10 +81,14 @@ function EventHistory() {
         }
     }
 
-    const fetchAlerts = useCallback(async () => {
+    const fetchAlerts = useCallback(async (options = {}) => {
+        const showLoading = options?.showLoading === true
+
         try {
             setError('')
-            setLoading(true)
+            if (showLoading) {
+                setLoading(true)
+            }
 
             const alerts = await fetchAlertHistory()
             const mappedEvents = alerts.map(mapAlertToEvent)
@@ -93,12 +98,14 @@ function EventHistory() {
             console.error('Error fetching alerts:', err)
             setError('Failed to load event history.')
         } finally {
-            setLoading(false)
+            if (showLoading) {
+                setLoading(false)
+            }
         }
     }, [])
 
     useEffect(() => {
-        fetchAlerts()
+        fetchAlerts({ showLoading: true })
 
         const subscription = supabase
             .channel('alerts_changes')
@@ -111,7 +118,10 @@ function EventHistory() {
             )
             .subscribe()
 
+        window.addEventListener(ALERTS_REFRESH_EVENT, fetchAlerts)
+
         return () => {
+            window.removeEventListener(ALERTS_REFRESH_EVENT, fetchAlerts)
             supabase.removeChannel(subscription)
         }
     }, [fetchAlerts])

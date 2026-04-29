@@ -17,7 +17,8 @@ BACKEND_PI_DATA_URL = os.getenv(
     "https://ser-517-industry-team-15.onrender.com/api/pi/data",
 )
 PI_ID = os.getenv("PI_ID", "").strip()
-PI_NAME = os.getenv("PI_NAME", "pi-001").strip()
+pi_name = os.getenv("PI_NAME", "unknown-pi").strip()
+PI_NAME = pi_name
 PI_IP_ADDRESS = os.getenv("PI_IP_ADDRESS", "").strip()
 HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "120"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "60"))
