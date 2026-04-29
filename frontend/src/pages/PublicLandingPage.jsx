@@ -103,9 +103,6 @@ function PublicLandingPage({ onLoginClick, onSignUpClick }) {
               <span className="logo-ambulance">AMBULANCE</span>
               <span className="logo-asset">ASSETTRACKER</span>
             </div>
-            <p className="footer-copy">
-              © 2023 Asset Control Technologies. All rights reserved.
-            </p>
           </div>
         </div>
       </footer>
